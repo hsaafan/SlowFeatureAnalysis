@@ -25,13 +25,13 @@ def dataSetup(length, delayed_copies):
 def objectSetup():
     X = dataSetup(300,4)
     SlowFeature = SFA(X)
-    SlowFeature.train()
+    SlowFeature.train(True)
     return SlowFeature
 
 
 def test_dataVariance():
     SlowFeature = objectSetup()
-    Z = SlowFeature.normalized_expanded_data
+    Z = SlowFeature.normalized_expanded_signals
     cov_matrix = np.matmul(Z,Z.T)
 
     num_features = Z.shape[0]
@@ -44,7 +44,7 @@ def test_dataVariance():
 
 def test_dataMean():
     SlowFeature = objectSetup()
-    Z = SlowFeature.normalized_expanded_data
+    Z = SlowFeature.normalized_expanded_signals
     Zmeans = Z.mean(axis=1)
 
     assert not np.all(np.around(Zmeans,PREC))
