@@ -20,7 +20,7 @@ def dataSetup(length, delayed_copies):
     for i in range(0,delayed_copies):
        X[:,i] = S[i:length+i+1-delayed_copies,0]
 
-    return X
+    return X.T
 
 def objectSetup():
     X = dataSetup(300,4)
