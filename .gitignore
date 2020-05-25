@@ -2,3 +2,4 @@
 .pytest_cache
 __pychache__
 *.pyc
+TE_process
