@@ -22,15 +22,15 @@ def dataSetup(length, delayed_copies):
 
     return X.T
 
-def objectSetup():
-    X = dataSetup(300,4)
-    SlowFeature = SFA(X)
-    SlowFeature.train(True)
+def objectSetup(k,expand,order):
+    X = dataSetup(300,k)
+    SlowFeature = SFA(X,order)
+    SlowFeature.train(expand)
     return SlowFeature
 
 
-def test_dataVariance():
-    SlowFeature = objectSetup()
+def dataVariance(k,expand,order):
+    SlowFeature = objectSetup(k,expand,order)
     Z = SlowFeature.normalized_expanded_signals
     cov_matrix = np.matmul(Z,Z.T)
 
@@ -42,16 +42,16 @@ def test_dataVariance():
     assert not np.all(diff)
     return
 
-def test_dataMean():
-    SlowFeature = objectSetup()
+def dataMean(k,expand,order):
+    SlowFeature = objectSetup(k,expand,order)
     Z = SlowFeature.normalized_expanded_signals
     Zmeans = Z.mean(axis=1)
 
     assert not np.all(np.around(Zmeans,PREC))
     return
 
-def test_sfVariance():
-    SlowFeature = objectSetup()
+def sfVariance(k,expand,order):
+    SlowFeature = objectSetup(k,expand,order)
     Y = SlowFeature.slow_features
     cov_matrix = np.matmul(Y,Y.T)
 
@@ -63,8 +63,8 @@ def test_sfVariance():
     assert not np.all(diff)
     return
 
-def test_sfOrder():
-    SlowFeature = objectSetup()
+def sfOrder(k,expand,order):
+    SlowFeature = objectSetup(k,expand,order)
     Y = SlowFeature.slow_features
     
     Ydot = Y[:,1:] - Y[:,:-1]
@@ -77,3 +77,82 @@ def test_sfOrder():
             assert abs(prod) < precision
     return
 
+def test_dataVariance_dynamic_quadexpanded():
+    dataVariance(4,True,2)
+    return
+
+def test_dataMean_dynamic_quadexpanded():
+    dataMean(4,True,2)
+    return
+
+def test_sfVariance_dynamic_quadexpanded():
+    sfVariance(4,True,2)
+    return
+
+def test_sfOrder_dynamic_quadexpanded():
+    sfOrder(4,True,2)
+    return
+
+def test_dataVariance_dynamic_unexpanded():
+    dataVariance(4,False,2)
+    return
+
+def test_dataMean_dynamic_unexpanded():
+    dataMean(4,False,2)
+    return
+
+def test_sfVariance_dynamic_unexpanded():
+    sfVariance(4,False,2)
+    return
+
+def test_sfOrder_dynamic_unexpanded():
+    sfOrder(4,False,2)
+    return
+
+def test_dataVariance_static_unexpanded():
+    dataVariance(1,False,2)
+    return
+
+def test_dataMean_static_unexpanded():
+    dataMean(1,False,2)
+    return
+
+def test_sfVariance_static_unexpanded():
+    sfVariance(1,False,2)
+    return
+
+def test_sfOrder_static_unexpanded():
+    sfOrder(1,False,2)
+    return
+
+def test_dataVariance_static_quadexpanded():
+    dataVariance(1,True,2)
+    return
+
+def test_dataMean_static_quadexpanded():
+    dataMean(1,True,2)
+    return
+
+def test_sfVariance_static_quadexpanded():
+    sfVariance(1,True,2)
+    return
+
+def test_sfOrder_static_quadexpanded():
+    sfOrder(1,True,2)
+    return
+
+def test_dataVariance_static_cubeexpanded():
+    dataVariance(1,True,3)
+    return
+
+def test_dataMean_static_cubeexpanded():
+    dataMean(1,True,3)
+    return
+
+def test_sfVariance_static_cubeexpanded():
+    sfVariance(1,True,3)
+    return
+
+def test_sfOrder_static_cubeexpanded():
+    sfOrder(1,True,3)
+    return
