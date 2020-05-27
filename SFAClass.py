@@ -2,6 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from itertools import combinations_with_replacement as combinations
 from math import factorial as fac
+from math import floor
+
+import TEP_Import as imp
 
 class SFA:
     '''
@@ -42,6 +45,14 @@ class SFA:
     expanded = False       # Has there been non-linear expansion on x
     expanded_order = 1     # Order of nonlinear expansion
     
+
+    parted = False
+    slow_features_speed = None
+    Me = 1
+    slow_features_d = None
+    slow_features_e = None
+
+
     def __init__(self, X):
         # Store input signals and dimensions
         
@@ -115,6 +126,7 @@ class SFA:
         W = np.matmul(P.T,self.white_mat)
         S = np.matmul(P.T,Z)
 
+        self.slow_features_speed = Omega
         self.trans_norm_mat = P.T
         self.trans_mat = W
         self.slow_features = S
@@ -239,50 +251,90 @@ class SFA:
         
         return self.slow_features
 
+    def partition(self,q = 0.1):
+        # Partitions slow features into the slowest (1-q)*100% features
+        # and the fastest q*100% features
+
+        if self.slow_features is None:
+            raise RuntimeError("Model has not been trained yet")
+        
+        # Find slowness of input signals
+        xdot = self.signals[:,1:] - self.signals[:,:-1]
+        sig_speed = np.matmul(xdot,xdot.T).mean(axis=1)
+        sig_sorted = np.sort(sig_speed)
+        
+        # Find threshold value
+        threshold_index = int(floor(sig_sorted.size-q*sig_sorted.size))
+        threshold = sig_sorted[threshold_index]
+
+        # Find where to partition slow features
+        sf_speed = self.slow_features_speed
+        for i in range(sf_speed.size):
+            if sf_speed[i] > threshold:
+                self.Me = i
+                break    
+
+        self.slow_features_d = self.slow_features[:self.Me,:]
+        self.slow_features_e = self.slow_features[self.Me:,:]
+        self.parted = True
+        return
+
+    def calculate_monitors(self):
+        Omega = self.slow_features_speed
+        Omega_d_inv = np.diag(Omega[:self.Me]**(-1))
+        Omega_e_inv = np.diag(Omega[self.Me:]**(-1))
+        s_d = self.slow_features_d
+        s_e = self.slow_features_e
+        sdot_d = s_d[:,1:] - s_d[:,:-1]
+        sdot_e = s_e[:,1:] - s_e[:,:-1]
+
+        
+        T_squared_d = np.matmul(s_d.T,s_d)
+        T_squared_e = np.matmul(s_e.T,s_e)
+        S_squared_d = np.matmul(np.matmul(sdot_d.T,Omega_d_inv),sdot_d)
+        S_squared_e = np.matmul(np.matmul(sdot_e.T,Omega_e_inv),sdot_e)
+        
+        self.T_squared_d = T_squared_d
+        self.T_squared_e = T_squared_e
+        self.S_squared_d = S_squared_d
+        self.S_squared_e = S_squared_e
+        
+        return(T_squared_d,T_squared_e,S_squared_d,S_squared_e)
 
 if __name__ == "__main__":    
-    ###########################################
-    # Setting up a data sample
-    # Example taken from:
-    # https://towardsdatascience.com/a-brief-introduction-to-slow-feature-analysis-18c901bc2a58
-    
-    length = 300
-    S = np.zeros((length,1),'d')
-    D = np.zeros((length,1),'d')
-    S[0] = 0.6
-    for t in range(1,length):
-        D[t] = np.sin(np.pi/75. * t) - t/150.
-        S[t] = (3.7+0.35*D[t]) * S[t-1] * (1 - S[t-1])
-
-    k = 3
-    X = S.reshape((1,length))
-    ###########################################
+    training_sets = list(imp.importTrainingSets([0]))
+    training_set_0 = training_sets[0]
+    X = training_set_0[1]
+    k = 2
     
     # Run SFA
     SlowFeature = SFA(X)
     SlowFeature.dynamize(k)
-    SlowFeature.expand(2)
-    Y = SlowFeature.train().T
+    #SlowFeature.expand(2)
+    Y = SlowFeature.train()
+    SlowFeature.partition()
+    T_d, T_e, S_d, S_e  = SlowFeature.calculate_monitors()
 
     # Plotting
-    plt.figure()
 
-    plt.subplot(2,2,1)
-    plt.title("Signal S(D) (Input)")
-    plt.plot(S)
+    plt.figure("Measured Variables")
+    for i in range(41):
+        plt.subplot(7,6,i+1)
+        plt.plot(X[i,:])
+    plt.figure("Manipulated Variables")
+    for i in range(12):
+        plt.subplot(3,4,i+1)
+        plt.plot(X[40+i,:])
     
-    plt.subplot(2,2,2)
-    plt.title("Signal D")
-    plt.plot(D)
-    
-    D_norm = (D-D.mean())/(D.std())
-    print(D_norm[k:].shape,Y.shape)
-    plt.subplot(2,2,3)
-    plt.title("Normalized D vs Slowest Feature")
-    plt.scatter(Y[:,0],D_norm[k:])
-    
-    plt.subplot(2,2,4)
-    plt.title("Slowest feature")
-    plt.plot(Y[:,0])
-    
+    plt.figure("20 Slowest Features")
+    for i in range(20):
+        plt.subplot(5,4,i+1)
+        plt.plot(Y[i,:])
+
+    plt.figure("20 Fastest Features")
+    for i in range(20):
+        plt.subplot(5,4,i+1)
+        plt.plot(Y[-(i+1),:])
+        
     plt.show()
+

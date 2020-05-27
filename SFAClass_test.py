@@ -1,26 +1,21 @@
 import numpy as np
+import TEP_Import as imp
 from SFAClass import SFA
 
-PREC = 12 # Consider any number less than 10^(-PREC) to be 0
+# TODO: Is there a set precision that should be used?
+PREC = 6 # Consider any number less than 10^(-PREC) to be 0
 
 
-def dataSetup(length):
-    # Setting up a data sample
-    # Example taken from:
-    # https://towardsdatascience.com/a-brief-introduction-to-slow-feature-analysis-18c901bc2a58
+def dataSetup():
+    # TODO: Importing data everytime is slow, speed this up somehow
+    training_sets = list(imp.importTrainingSets([0]))
+    training_set_0 = training_sets[0]
+    X = training_set_0[1]
     
-    S = np.zeros((length,1),'d')
-    D = np.zeros((length,1),'d')
-    S[0] = 0.6
-    for t in range(1,length):
-        D[t] = np.sin(np.pi/75. * t) - t/150.
-        S[t] = (3.7+0.35*D[t]) * S[t-1] * (1 - S[t-1])
-                                           
-    X = S.reshape((1,length))
     return X
 
 def objectSetup(k,expand,order):
-    X = dataSetup(300)
+    X = dataSetup()
     SlowFeature = SFA(X)
     if k > 1:
         SlowFeature.dynamize(k+1)
