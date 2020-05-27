@@ -4,7 +4,7 @@ from SFAClass import SFA
 PREC = 12 # Consider any number less than 10^(-PREC) to be 0
 
 
-def dataSetup(length, delayed_copies):
+def dataSetup(length):
     # Setting up a data sample
     # Example taken from:
     # https://towardsdatascience.com/a-brief-introduction-to-slow-feature-analysis-18c901bc2a58
@@ -16,22 +16,23 @@ def dataSetup(length, delayed_copies):
         D[t] = np.sin(np.pi/75. * t) - t/150.
         S[t] = (3.7+0.35*D[t]) * S[t-1] * (1 - S[t-1])
                                            
-    X = np.zeros((length-(delayed_copies-1),delayed_copies),'d')
-    for i in range(0,delayed_copies):
-       X[:,i] = S[i:length+i+1-delayed_copies,0]
-
-    return X.T
+    X = S.reshape((1,length))
+    return X
 
 def objectSetup(k,expand,order):
-    X = dataSetup(300,k)
-    SlowFeature = SFA(X,order)
-    SlowFeature.train(expand)
+    X = dataSetup(300)
+    SlowFeature = SFA(X)
+    if k > 1:
+        SlowFeature.dynamize(k+1)
+    if expand:
+        SlowFeature.expand(order)
+    SlowFeature.train()
     return SlowFeature
 
 
 def dataVariance(k,expand,order):
     SlowFeature = objectSetup(k,expand,order)
-    Z = SlowFeature.normalized_expanded_signals
+    Z = SlowFeature.signals_norm
     cov_matrix = np.matmul(Z,Z.T)
 
     num_features = Z.shape[0]
@@ -44,7 +45,7 @@ def dataVariance(k,expand,order):
 
 def dataMean(k,expand,order):
     SlowFeature = objectSetup(k,expand,order)
-    Z = SlowFeature.normalized_expanded_signals
+    Z = SlowFeature.signals_norm
     Zmeans = Z.mean(axis=1)
 
     assert not np.all(np.around(Zmeans,PREC))

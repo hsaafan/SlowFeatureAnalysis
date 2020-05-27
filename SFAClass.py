@@ -5,112 +5,103 @@ from math import factorial as fac
 
 class SFA:
     '''
-    raw_signals is an m-dimensional input signal:
-       x(t) = [x1(t), x2(t), ..., xm(t)]^T
-    m is the number of different signals
-    N is the number of data samples available in each signal
-    normalized_signals is raw_signals normalized with 0 mean and unit variance
+    Slow feature analysis class that takes a set of input signals and
+    calculates the transformation matrix and slow features for the inputs
+    '''
 
-    '''    
-    raw_signals = None
-    m = None
-    N = None
+    # Matrix dimensions (m -> rows, N -> columns)
+    m = None               # Input signals
+    N = None               # Input samples
+    m_dyn = None           # Signals available after padding (m_dyn > m)
+    N_dyn = None           # Samples available after padding (N_dyn < N)
+    m_exp = None           # Signals available after expansion (m_exp > m)
+    # Expansion doesn't affect number of available samples
     
-    normalized_signals = None
-    raw_expanded_signals = None
-    normalized_expanded_signals = None
-    slow_features = None
+    # s = Wx
+    # If not dynamic: signals_dyn = signals
+    # If not padded:  signals_exp = signals_dyn
+    slow_features = None   # Slow features (s)
+    trans_mat = None       # Transformation matrix (W)
+    signals = None         # Raw input signals
+    signals_dyn = None     # Padded raw input signals
+    signals_exp = None     # Expanded input signals
+    signals_cent = None    # Signals centered around 0 (x)
+    
+    # z = Qx
+    signals_norm = None    # Normalized signals (z)
+    white_mat = None       # Whitening matrix (Q)
 
-    whitening_matrix = None
-    transformation_matrix = None
-    expansion_order = None
-    loadings = None
+    # s = Pz
+    trans_nor_mat = None   # Transformation matrix for normalized signals (P)
     
-    def __init__(self, raw_signals, expansion_order=2):
-        if not isinstance(raw_signals, np.ndarray):
+
+    # Padding should be performed before expansion if both are desired
+    # TODO: check if order actually matters, its enforced here for simplicity
+    padded = False         # Has x been padded with time-delayed copies
+    padded_copies = 0      # Number of padded copies (not including original)
+    expanded = False       # Has there been non-linear expansion on x
+    expanded_order = 1     # Order of nonlinear expansion
+    
+    def __init__(self, X):
+        # Store input signals and dimensions
+        
+        if not isinstance(X, np.ndarray):
             raise TypeError("Expected a numpy ndarray object")
 
-        if raw_signals.ndim == 1:
-            self.N = raw_signals.shape[0]
+        if X.ndim == 1:
+            # If the array input is 1-D, assume there is one signal with
+            # multiple samples
             self.m = 1
+            self.N = X.shape[0]
         else:
-            self.N = raw_signals.shape[1]
-            self.m = raw_signals.shape[0]
+            self.m = X.shape[0]
+            self.N = X.shape[1]
+            
+        self.signals = X
 
-        self.raw_signals = raw_signals
-        self.expansion_order = expansion_order
         return
     
+    def center(self):
+        # Center signals to 0 mean
+        if self.expanded:
+            X = self.signals_exp
+            num_signals = self.m_exp
+        elif self.padded:
+            X = self.signals_dyn
+            num_signals = self.m_dyn
+        else:
+            X = self.signals
+            num_signals = self.m
+
+        # X_means is a column vector where each element corresponds to
+        # a signal (row or X) mean
         
-    def normalize(self):
-        # Normalize input signals to 0 mean and unit variance
-        X = self.raw_signals
-        # Mean of each signal
-        X_means = X.mean(axis=1).reshape((self.m,1))
+        X_means = X.mean(axis=1).reshape((num_signals,1))
 
-        self.normalized_signals = X-X_means
-        return
-    
-    def expansion(self):
-        # Perform nth order nonlinear expansion of signal
-        n = self.expansion_order
-        if not type(n) == int:
-            raise TypeError("Expected an integer for the expansion order")
-        if not n > 1:
-            raise ValueError("Can't expand with order less than 2")
-
-        # Find dimensions of expanded matrix
-        k = self.m # Order 1
-        for r in range(2,n+1):
-            # Order 2 -> n
-            k += fac(r+self.m-1)/(fac(r)*(fac(self.m-1)))
-        k = int(k)
-
-        Ztilda = np.empty((k,self.N))
-        X = self.normalized_signals
-
-        # Add expanded signals
-
-        # Order 1
-        Ztilda[0:self.m,:] = X
-        
-        pos = self.m # Where to add new signal
-        for order in range(2,n+1):
-            # Order 2 -> n
-            for comb in combinations(range(self.m),order):
-                exp_signal = np.ones((1,self.N))
-                for i in comb:
-                    exp_signal = exp_signal*X[i,:]
-                Ztilda[pos,:] = exp_signal
-                pos += 1
-        
-        # Set the mean to 0
-        Ztilda = Ztilda - Ztilda.mean(axis=1).reshape(k,1)
-        self.raw_expanded_signals = Ztilda
+        self.signals_cent = X-X_means
         return
 
-
-    def whitening(self):
-        # Expanded signal is whitened
-        Ztilda = self.raw_expanded_signals
+    def whiten(self):
+        # Scale signals to unit variance using SVD
+        X = self.signals_cent
         
         # SVD of the var-cov matrix
-        Sigma = np.matmul(Ztilda,Ztilda.T)
+        Sigma = np.matmul(X,X.T)
+        
         U,Lambda,UT = np.linalg.svd(Sigma)
-
+        
         # Calculate the whitening matrix
         Q = np.matmul(np.diag(Lambda**-(1/2)),UT)
-        Z = np.matmul(Q,Ztilda)
+        Z = np.matmul(Q,X)
 
-        self.whitening_matrix = Q
-        self.normalized_expanded_signals = Z
+        self.white_mat = Q
+        self.signals_norm = Z
         return
     
     def compute_slow_features(self):
-        # Step 5: Principal component analysis
         # TODO: Replace direct eigendecompsition for SVD
+        Z = self.signals_norm
         
-        Z = self.normalized_expanded_signals
         # Approximate the first order time derivative of the signals
         Zdot = Z[:,1:] - Z[:,:-1]
         
@@ -120,11 +111,14 @@ class SFA:
 
         # The loadings are ordered to find the slowest varying features
         P, Omega = self.order(P,Omega)
-        W = np.matmul(P.T,self.whitening_matrix)
+
+        W = np.matmul(P.T,self.white_mat)
         S = np.matmul(P.T,Z)
-        self.loadings = P.T
-        self.transformation_matrix = W
+
+        self.trans_norm_mat = P.T
+        self.trans_mat = W
         self.slow_features = S
+
         return
 
     def order(self,eigenvectors,eigenvalues):
@@ -133,9 +127,9 @@ class SFA:
         if not isinstance(eigenvectors,np.ndarray):
             return TypeError("Expected an ndarray of eigenvectors")
         if not isinstance(eigenvalues,np.ndarray):
-            return TypeError("Expected an ndarray of eigenvalues")
+            raise TypeError("Expected an ndarray of eigenvalues")
         if not eigenvectors.shape[1]==eigenvalues.shape[0]:
-            return IndexError("Expected 1 eigenvalue per eigenvector: "
+            raise IndexError("Expected 1 eigenvalue per eigenvector: "
                               + "Received " + str(eigenvectors.shape[1])
                               + " eigenvectors and "
                               + str(eigenvalues.shape[0]) + "eigenvalues")
@@ -150,18 +144,97 @@ class SFA:
             eigenvalues[index] = np.inf
         
         return(vecs,vals)
-    
 
-    def train(self,expand=True):
-        # Runs the SFA algorithm and returns the slow features
-        # TODO: Once more options are available, expand this function
-        #       to use those options (e.g. cubic expansion)
-        self.normalize()
-        if expand:
-            self.expansion()
+    def dynamize(self, copies):
+        # Add time-delayed copies
+        # copies does not include the original set of signals
+        if self.padded:
+            raise RuntimeError("Signals have already been dynamized")
+        if self.expanded:
+            # TODO: Check if this actually matters
+            raise RuntimeError("Signals can't be expanded before dynamizing")
+        if not type(copies) == int:
+            raise TypeError("Expected an integer number of copies")
+        if not copies > 0:
+            raise ValueError("Invalid number of copies added")
+
+        
+        signals = self.signals
+
+        m = self.m
+        N = self.N        
+        m_dyn = m*(copies+1) # Add 1 for original copy of signals
+        N_dyn = N - copies
+        X = np.zeros((m_dyn,N_dyn))
+
+        for i in range(0,copies+1):
+            start_row = i * m
+            stop_row  = (i + 1) * m
+            start_col = i
+            stop_col = N - copies + i
+            X[start_row:stop_row,:] = signals[:,start_col:stop_col]
+        
+        self.m_dyn = m_dyn
+        self.N_dyn = N_dyn
+        self.signals_dyn = X
+        self.padded = True
+        self.padded_copies = copies
+        
+        return
+    
+    def expand(self,n=2):
+        '''
+        Performs nonlinear expansion on signals where n is the
+        order of expanson performed
+        '''
+        if self.expanded:
+            raise RuntimeError("Signal has already been expanded")
+        if not type(n) == int:
+            raise TypeError("Expected an integer for the expansion order")
+        if not n > 1:
+            raise ValueError("Can't expand with order less than 2")
+
+        if self.padded:
+            num_signals = self.m_dyn
+            num_samples = self.N_dyn
+            X = self.signals_dyn
         else:
-            self.raw_expanded_signals = self.normalized_signals
-        self.whitening()
+            num_signals = self.m
+            num_samples = self.N
+            X = self.signals
+
+        # Find dimensions of expanded matrix
+        k = num_signals # Order 1
+        for r in range(2,n+1):
+            # Order 2 -> n
+            k += fac(r+num_signals-1)/(fac(r)*(fac(num_signals-1)))
+        k = int(k)
+
+        X_exp = np.empty((k,num_samples))
+        
+
+        # Add expanded signals
+        # Order 1
+        X_exp[0:num_signals,:] = X
+        
+        pos = num_signals # Where to add new signal
+        for order in range(2,n+1):
+            # Order 2 -> n
+            for comb in combinations(range(num_signals),order):
+                exp_signal = np.ones((1,num_samples))
+                for i in comb:
+                    exp_signal = exp_signal*X[i,:]
+                X_exp[pos,:] = exp_signal
+                pos += 1
+        
+        self.signals_exp = X_exp
+        return
+
+
+    def train(self):
+        # Runs the SFA algorithm and returns the slow features
+        self.center()
+        self.whiten()
         self.compute_slow_features()
         
         return self.slow_features
@@ -181,15 +254,14 @@ if __name__ == "__main__":
         D[t] = np.sin(np.pi/75. * t) - t/150.
         S[t] = (3.7+0.35*D[t]) * S[t-1] * (1 - S[t-1])
 
-    
-    k = 4  # Number of time delayed copies to add
-    X = np.zeros((k,length-(k-1)),'d')
-    for i in range(0,k):
-       X[i,:] = S[i:length+i+1-k,0]
+    k = 3
+    X = S.reshape((1,length))
     ###########################################
     
     # Run SFA
-    SlowFeature = SFA(X,3)
+    SlowFeature = SFA(X)
+    SlowFeature.dynamize(k)
+    SlowFeature.expand(2)
     Y = SlowFeature.train().T
 
     # Plotting
@@ -204,9 +276,10 @@ if __name__ == "__main__":
     plt.plot(D)
     
     D_norm = (D-D.mean())/(D.std())
+    print(D_norm[k:].shape,Y.shape)
     plt.subplot(2,2,3)
     plt.title("Normalized D vs Slowest Feature")
-    plt.scatter(Y[:,0],D_norm[k-1:])
+    plt.scatter(Y[:,0],D_norm[k:])
     
     plt.subplot(2,2,4)
     plt.title("Slowest feature")
