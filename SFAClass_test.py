@@ -14,19 +14,15 @@ def dataSetup():
     
     return X
 
-def objectSetup(k,expand,order):
+def objectSetup(k,order):
     X = dataSetup()
     SlowFeature = SFA(X)
-    if k > 1:
-        SlowFeature.dynamize(k+1)
-    if expand:
-        SlowFeature.expand(order)
-    SlowFeature.train()
+    SlowFeature.train(k,order)
     return SlowFeature
 
 
-def dataVariance(k,expand,order):
-    SlowFeature = objectSetup(k,expand,order)
+def dataVariance(k,order):
+    SlowFeature = objectSetup(k,order)
     Z = SlowFeature.signals_norm
     cov_matrix = np.matmul(Z,Z.T)
 
@@ -38,16 +34,16 @@ def dataVariance(k,expand,order):
     assert not np.all(diff)
     return
 
-def dataMean(k,expand,order):
-    SlowFeature = objectSetup(k,expand,order)
+def dataMean(k,order):
+    SlowFeature = objectSetup(k,order)
     Z = SlowFeature.signals_norm
     Zmeans = Z.mean(axis=1)
 
     assert not np.all(np.around(Zmeans,PREC))
     return
 
-def sfVariance(k,expand,order):
-    SlowFeature = objectSetup(k,expand,order)
+def sfVariance(k,order):
+    SlowFeature = objectSetup(k,order)
     Y = SlowFeature.slow_features
     cov_matrix = np.matmul(Y,Y.T)
 
@@ -59,8 +55,8 @@ def sfVariance(k,expand,order):
     assert not np.all(diff)
     return
 
-def sfOrder(k,expand,order):
-    SlowFeature = objectSetup(k,expand,order)
+def sfOrder(k,order):
+    SlowFeature = objectSetup(k,order)
     Y = SlowFeature.slow_features
     
     Ydot = Y[:,1:] - Y[:,:-1]
@@ -74,81 +70,81 @@ def sfOrder(k,expand,order):
     return
 
 def test_dataVariance_dynamic_quadexpanded():
-    dataVariance(4,True,2)
+    dataVariance(4,2)
     return
 
 def test_dataMean_dynamic_quadexpanded():
-    dataMean(4,True,2)
+    dataMean(4,2)
     return
 
 def test_sfVariance_dynamic_quadexpanded():
-    sfVariance(4,True,2)
+    sfVariance(4,2)
     return
 
 def test_sfOrder_dynamic_quadexpanded():
-    sfOrder(4,True,2)
+    sfOrder(4,2)
     return
 
 def test_dataVariance_dynamic_unexpanded():
-    dataVariance(4,False,2)
+    dataVariance(4,1)
     return
 
 def test_dataMean_dynamic_unexpanded():
-    dataMean(4,False,2)
+    dataMean(4,1)
     return
 
 def test_sfVariance_dynamic_unexpanded():
-    sfVariance(4,False,2)
+    sfVariance(4,1)
     return
 
 def test_sfOrder_dynamic_unexpanded():
-    sfOrder(4,False,2)
+    sfOrder(4,1)
     return
 
 def test_dataVariance_static_unexpanded():
-    dataVariance(1,False,2)
+    dataVariance(0,1)
     return
 
 def test_dataMean_static_unexpanded():
-    dataMean(1,False,2)
+    dataMean(0,1)
     return
 
 def test_sfVariance_static_unexpanded():
-    sfVariance(1,False,2)
+    sfVariance(0,1)
     return
 
 def test_sfOrder_static_unexpanded():
-    sfOrder(1,False,2)
+    sfOrder(0,1)
     return
 
 def test_dataVariance_static_quadexpanded():
-    dataVariance(1,True,2)
+    dataVariance(0,2)
     return
 
 def test_dataMean_static_quadexpanded():
-    dataMean(1,True,2)
+    dataMean(0,2)
     return
 
 def test_sfVariance_static_quadexpanded():
-    sfVariance(1,True,2)
+    sfVariance(0,2)
     return
 
 def test_sfOrder_static_quadexpanded():
-    sfOrder(1,True,2)
+    sfOrder(0,2)
     return
 
 def test_dataVariance_static_cubeexpanded():
-    dataVariance(1,True,3)
+    dataVariance(0,3)
     return
 
 def test_dataMean_static_cubeexpanded():
-    dataMean(1,True,3)
+    dataMean(0,3)
     return
 
 def test_sfVariance_static_cubeexpanded():
-    sfVariance(1,True,3)
+    sfVariance(0,3)
     return
 
 def test_sfOrder_static_cubeexpanded():
-    sfOrder(1,True,3)
+    sfOrder(0,3)
     return
