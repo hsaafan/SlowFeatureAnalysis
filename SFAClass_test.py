@@ -3,7 +3,7 @@ import TEP_Import as imp
 from SFAClass import SFA
 
 # TODO: Is there a set precision that should be used?
-PREC = 6 # Consider any number less than 10^(-PREC) to be 0
+PREC = 5 # Consider any number less than 10^(-PREC) to be 0
 
 
 def dataSetup():
@@ -17,6 +17,7 @@ def dataSetup():
 def objectSetup(k,order):
     X = dataSetup()
     SlowFeature = SFA(X)
+    SlowFeature.delta = 3
     SlowFeature.train(k,order)
     return SlowFeature
 
@@ -24,7 +25,8 @@ def objectSetup(k,order):
 def dataVariance(k,order):
     SlowFeature = objectSetup(k,order)
     Z = SlowFeature.signals_norm
-    cov_matrix = np.matmul(Z,Z.T)
+    N = Z.shape[1]
+    cov_matrix = np.matmul(Z,Z.T)/(SlowFeature.delta*N)
 
     num_features = Z.shape[0]
     ident = np.identity(num_features)
@@ -45,7 +47,8 @@ def dataMean(k,order):
 def sfVariance(k,order):
     SlowFeature = objectSetup(k,order)
     Y = SlowFeature.slow_features
-    cov_matrix = np.matmul(Y,Y.T)
+    N = Y.shape[1]
+    cov_matrix = np.matmul(Y,Y.T)/(SlowFeature.delta*N)
 
     num_features = Y.shape[0]
     ident = np.identity(num_features)
@@ -58,14 +61,14 @@ def sfVariance(k,order):
 def sfOrder(k,order):
     SlowFeature = objectSetup(k,order)
     Y = SlowFeature.slow_features
-    
-    Ydot = Y[:,1:] - Y[:,:-1]
+
     num_features = Y.shape[0]
+    num_signals = Y.shape[1]
 
     precision = 10**(-PREC)
     for i in range(0,num_features):
         for j in range(i+1,num_features):
-            prod = np.matmul(Y[i,:],Y[j,:])
+            prod = np.matmul(Y[i,:],Y[j,:])/(num_signals*SlowFeature.delta)
             assert abs(prod) < precision
     return
 
