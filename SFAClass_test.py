@@ -26,7 +26,7 @@ def dataVariance(k,order):
     SlowFeature = objectSetup(k,order)
     Z = SlowFeature.signals_norm
     N = Z.shape[1]
-    cov_matrix = np.matmul(Z,Z.T)/(SlowFeature.delta*N)
+    cov_matrix = np.matmul(Z,Z.T)/(N-1)
 
     num_features = Z.shape[0]
     ident = np.identity(num_features)
@@ -48,7 +48,7 @@ def sfVariance(k,order):
     SlowFeature = objectSetup(k,order)
     Y = SlowFeature.slow_features
     N = Y.shape[1]
-    cov_matrix = np.matmul(Y,Y.T)/(SlowFeature.delta*N)
+    cov_matrix = np.matmul(Y,Y.T)/(N-1)
 
     num_features = Y.shape[0]
     ident = np.identity(num_features)
