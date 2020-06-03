@@ -1,6 +1,6 @@
 import numpy as np
+import scipy
 import warnings
-
 from DataNode import Node
 
 class Norm(Node):
@@ -11,8 +11,8 @@ class Norm(Node):
     data = None
     offset = None
     white_mat = None
-    m = None
-    n = None
+    variables = None
+    samples = None
     
     def __init__(self,data):
         '''
@@ -22,9 +22,9 @@ class Norm(Node):
         normalize_similar() method
         '''
         self._check_input_data(data)
-        self.data = np.copy(data)
-        self.m = self.data.shape[0]
-        self.n = self.data.shape[1]
+        self.data = data
+        self.variables = self.data.shape[0]
+        self.samples = self.data.shape[1]
 
         return
     
@@ -32,7 +32,7 @@ class Norm(Node):
         '''
         Centers a data matrix around 0
         '''
-        data_means = data.mean(axis=1).reshape((self.m,1))
+        data_means = data.mean(axis=1).reshape((self.variables,1))
         self.offset = data_means
         centered_data = data - self.offset
         return(centered_data)
@@ -40,11 +40,10 @@ class Norm(Node):
     def _whiten(self,data):
         ''' 
         Scale signals to unit variance using SVD
-        '''
-        
+        '''        
         # SVD of the var-cov matrix
-        Sigma = np.matmul(data,data.T)/(self.n-1)
-        U,Lambda,UT = np.linalg.svd(Sigma)
+        Sigma = np.cov(data)
+        U,Lambda,UT = np.linalg.svd(Sigma,hermitian=True)
 
         # Calculate the whitening matrix
         Q = np.matmul(np.diag(Lambda**-(1/2)),UT)
@@ -59,11 +58,10 @@ class Norm(Node):
         '''
         centered_data = self._center(self.data)
         normalized_data = self._whiten(centered_data)
-
         return(normalized_data)
     
     def center_similar(self,data):
-        centered_data = np.copy(data)-self.offset
+        centered_data = data-self.offset
         return(centered_data)
 
     def whiten_similar(self,data):
@@ -77,7 +75,6 @@ class Norm(Node):
         how the original data input was normalized
         '''
         self._check_input_data(data)
-        centered_data = np.copy(data) - self.offset
+        centered_data = data - self.offset
         normalized_data = np.matmul(self.white_mat,centered_data) 
         return(normalized_data)
-    

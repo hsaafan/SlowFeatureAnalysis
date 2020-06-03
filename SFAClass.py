@@ -3,9 +3,9 @@ import scipy.stats as stats
 import matplotlib.pyplot as plt
 
 import TEP_Import as imp
-from Norm import Norm
 from DataNode import Node
-    
+from Norm import Norm
+
 class SFA(Node):
     '''
     Slow feature analysis class that takes a set of input signals and
@@ -23,6 +23,8 @@ class SFA(Node):
     
     # Matrix dimensions of training data (m -> rows, N -> columns)
     delta = 1
+    m_raw = None           # Input (raw) signals
+    N_raw = None           # Input (raw) samples
     m = None               # Input (expanded and dynamized) signals
     N = None               # Input (expanded and dynamized) samples
 
@@ -58,7 +60,7 @@ class SFA(Node):
         Returns an SFA object.
         '''
         # Store original signals
-        self.signals_raw = np.copy(signals_raw)
+        self.signals_raw = signals_raw
         self.m_raw = signals_raw.shape[0]
         self.N_raw = signals_raw.shape[1]
         
@@ -66,9 +68,8 @@ class SFA(Node):
         self.dynamic_copies = dynamic_copies
         self.expansion_order = expansion_order
 
-        X = self._preprocess_signals(signals_raw)
-
         # Store dynamized and expanded signals
+        X = self._preprocess_signals(signals_raw)
         self.m = X.shape[0]
         self.N = X.shape[1]
         self.signals = X
@@ -79,8 +80,7 @@ class SFA(Node):
         '''
         Add lagged copies and perform nonlinear expansion
         '''
-        signals = np.copy(signals_raw)
-        signals = self.dynamize(signals,self.dynamic_copies)
+        signals = self.dynamize(signals_raw,self.dynamic_copies)
         signals = self.nonlinear_expansion(signals,self.expansion_order)
         return(signals)
     
@@ -89,12 +89,10 @@ class SFA(Node):
         Creates the Norm object for future normalization and normalizes
         the training data
         '''
-        signals = np.copy(self.signals)
-        NormObj = Norm(signals)
+        NormObj = Norm(self.signals)
         signals_norm = NormObj.normalize()
         self.NormObj = NormObj
         self.signals_norm = signals_norm
-        
         return
     
     def _transform_training(self):
@@ -102,50 +100,29 @@ class SFA(Node):
         Transforms the whitened data into the features and stores 
         the transformation matrix and feature speeds
         '''
-        Z = np.copy(self.signals_norm)        
+        Z = self.signals_norm
 
         # Approximate the first order time derivative of the signals
-        Zdot = (Z[:,1:] - Z[:,:-1])/self.delta
-        Ndot = Zdot.shape[1]
+        Zdot = np.diff(Z)/self.delta
         
         # SVD of the var-cov matrix of Zdot
-        Zdotcov = np.matmul(Zdot,Zdot.T)/(Ndot-1)
-        PT, Omega, P = np.linalg.svd(Zdotcov)
+        Zdotcov = np.cov(Zdot)        
+        PT, Omega, P = np.linalg.svd(Zdotcov,hermitian = True)
 
         # The loadings are ordered to find the slowest varying features
         self.features_speed, P = self._order(Omega,P)
-        
+
         self.trans_mat = np.matmul(P,self.NormObj.white_mat)
-        self.features = np.matmul(P,Z)        
+        self.features = np.matmul(P,Z)
         return
 
     def _order(self,eigenvalues,eigenvectors):
         '''
-        Private method used for ordering a pair of related ndarrays that
-        contain eigenvectors and eigenvalues in ascending order of the
-        eigenvalues
-        Takes two ndarrays as inputs:
-        - The first is a n by 1 array containing the eigenvalues
-        - The second is a n by m array containing the eigenvectors as columns
+        Orders a set of eigenvalue/eigenvector pairs by ascending eigenvalues
         '''
-        if not isinstance(eigenvectors,np.ndarray):
-            return TypeError("Expected an ndarray of eigenvectors")
-        if not isinstance(eigenvalues,np.ndarray):
-            raise TypeError("Expected an ndarray of eigenvalues")
-        if not eigenvectors.shape[1]==eigenvalues.shape[0]:
-            raise IndexError("Expected 1 eigenvalue per eigenvector: "
-                              + "Received " + str(eigenvectors.shape[1])
-                              + " eigenvectors and "
-                              + str(eigenvalues.shape[0]) + "eigenvalues")
-        # TODO: Use a more efficient sorting algorithm
-        numvals = eigenvalues.shape[0]
-        vals = np.empty_like(eigenvalues)
-        vecs = np.empty_like(eigenvectors)
-        for i in range(0,numvals):
-            index = np.argmin(eigenvalues)
-            vals[i] = eigenvalues[index]
-            vecs[:,i] = eigenvectors[:,index]
-            eigenvalues[index] = np.inf
+        p = eigenvalues.argsort()
+        vals = eigenvalues[p]
+        vecs = eigenvectors[p,:]
         
         return(vals,vecs)
 
@@ -156,7 +133,6 @@ class SFA(Node):
         self._normalize_training()
         self._transform_training()
         self.trained = True
-        
         return self.features
 
     def partition(self,q = 0.1):
@@ -167,9 +143,9 @@ class SFA(Node):
         if not self.trained:
             raise RuntimeError("Model has not been trained yet")
 
-        X = np.copy(self.signals_norm)
+        X = self.signals_norm
         # Find slowness of input signals
-        xdot = (X[:,1:] - X[:,:-1])/self.delta
+        xdot = np.diff(X)/self.delta
         mdot = xdot.shape[0]
         Ndot = xdot.shape[1]
         sig_speed = np.zeros(mdot)
@@ -211,12 +187,10 @@ class SFA(Node):
         '''
         if alpha > 1:
             raise ValueError("Confidence level is capped at 1")
-
         p = 1 - alpha
         N  = self.N
         Md = self.Md
         Me = self.Me
-
         gd = (Md*(N**2-2*N))/((N-1)*(N-Md-1))
         ge = (Me*(N**2-2*N))/((N-1)*(N-Me-1))
 
@@ -247,8 +221,8 @@ class SFA(Node):
         s_d = features_online[:self.Me,:]
         s_e = features_online[self.Me:,:]
         # Calculate time derivatives
-        sdot_d = (s_d[:,1:] - s_d[:,:-1])/self.delta
-        sdot_e = (s_e[:,1:] - s_e[:,:-1])/self.delta
+        sdot_d = np.diff(s_d)/self.delta
+        sdot_e = np.diff(s_e)/self.delta
 
         N = s_d.shape[1]
         N_dot = sdot_d.shape[1]
@@ -268,10 +242,7 @@ class SFA(Node):
         Omega = self.features_speed
         Omega_d = Omega[:self.Me]
         Omega_e = Omega[self.Me:]
-        #Omega_d = np.diag(np.matmul(sdot_d,sdot_d.T))/(N_dot-1)
-        #Omega_e = np.diag(np.matmul(sdot_e,sdot_e.T))/(N_dot-1)
-        print(Omega)
-        print(Omega_d,Omega_e)
+        
         Omega_d_inv = np.diag(Omega_d**(-1))
         Omega_e_inv = np.diag(Omega_e**(-1))
         
@@ -312,7 +283,7 @@ if __name__ == "__main__":
     SlowFeature = SFA(X,d,n)
     SlowFeature.delta = 3
     Y = SlowFeature.train()
-    #SlowFeature.partition(q)
+    SlowFeature.partition(q)
     SlowFeature.partition_manual(Me)
     
     T_dc, T_ec, S_dc, S_ec = SlowFeature.calculate_crit_values()

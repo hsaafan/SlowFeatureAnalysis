@@ -1,9 +1,8 @@
 import numpy as np
-import warnings
 
+import warnings
 from itertools import combinations_with_replacement as combinations
 from math import factorial as fac
-
 
 class Node:
     '''
@@ -13,7 +12,7 @@ class Node:
     num_variables = None
     def __init__(self,data):
         self._check_input_data(data)
-        self.num_variables = np.copy(data).shape[0]
+        self.num_variables = data.shape[0]
         return
 
     def _check_input_data(self,data):
@@ -29,6 +28,7 @@ class Node:
         if not self.num_variables is None:
             if not data.shape[0] == self.num_variables:
                 raise RuntimeError("Variables do not match existing data")
+
         if data.shape[0] > data.shape[1]:
             warnings.warn("There are more signals than samples: " +
                           "Check that the data has been entered " +
@@ -66,13 +66,12 @@ class Node:
             data_dyn = data
         else:
             data_dyn = np.copy(data)
-
+            
             for i in range(1,copies+1):
                 rolled  = np.roll(data,i,axis=1)
                 data_dyn = np.append(data_dyn,rolled,axis=0)
 
             data_dyn = np.delete(data_dyn,range(copies),axis=1)
-
         return(data_dyn)
     
     
@@ -118,17 +117,16 @@ class Node:
 
             # Add expanded signals
             # Order 1
-            data_exp[0:m,:] = X
-
-            pos = n # Where to add new signal
+            data_exp[0:m,:] = data
+            
+            pos = m # Where to add new signal
             for order in range(2,expansion_order+1):
                 # Order 2 -> expansion_order
                 for comb in combinations(range(m),order):
-                    exp_signal = np.ones((1,m))
+                    exp_signal = np.ones((1,n))
                     for i in comb:
-                        exp_signal = exp_signal*X[i,:]
+                        exp_signal = exp_signal*data[i,:]
                     data_exp[pos,:] = exp_signal
-                pos += 1
+                    pos += 1
 
         return(data_exp)
-

@@ -1,153 +1,86 @@
 import numpy as np
 import TEP_Import as imp
 from SFAClass import SFA
+import DataNode
+
 
 # TODO: Is there a set precision that should be used?
-PREC = 5 # Consider any number less than 10^(-PREC) to be 0
-
+PREC = 6 # Consider any number less than 10^(-PREC) to be 0
+MAX_FEATURES = 250
 
 def dataSetup():
     # TODO: Importing data everytime is slow, speed this up somehow
     training_sets = list(imp.importTrainingSets([0]))
     training_set_0 = training_sets[0]
     X = training_set_0[1]
-    
+    X = np.delete(X,range(21,42),axis=0)
     return X
 
 def objectSetup(k,order):
     X = dataSetup()
-    SlowFeature = SFA(X)
+    SlowFeature = SFA(X,k,order)
     SlowFeature.delta = 3
-    SlowFeature.train(k,order)
+    SlowFeature.train()
+    
     return SlowFeature
 
-
-def dataVariance(k,order):
-    SlowFeature = objectSetup(k,order)
-    Z = SlowFeature.signals_norm
-    N = Z.shape[1]
-    cov_matrix = np.matmul(Z,Z.T)/(N-1)
-
-    num_features = Z.shape[0]
-    ident = np.identity(num_features)
-
-    diff = np.around(cov_matrix - ident,PREC)
+class DataFeatureProperties:
+    order = None
+    copies = None
+    SFObj = None
     
-    assert not np.all(diff)
-    return
+    def test_dataVariance(self):
+        Z = self.SFObj.signals_norm
+        num_signals = self.SFObj.m
+        num_samples = self.SFObj.N
+        cov_matrix = np.matmul(Z,Z.T)/(num_samples-1)
+        ident = np.identity(num_signals)
+        diff = np.around(cov_matrix - ident,PREC)
+        assert not np.all(diff)
+        return
 
-def dataMean(k,order):
-    SlowFeature = objectSetup(k,order)
-    Z = SlowFeature.signals_norm
-    Zmeans = Z.mean(axis=1)
+    def test_dataMean(self):
+        Z = self.SFObj.signals_norm
+        Zmeans = Z.mean(axis=1)
+        assert not np.all(np.around(Zmeans,PREC))
+        return
 
-    assert not np.all(np.around(Zmeans,PREC))
-    return
+    def test_sfVariance(self):
+        Y = self.SFObj.features
+        num_features = self.SFObj.m
+        num_samples = self.SFObj.N
+        cov_matrix = np.matmul(Y,Y.T)/(num_samples-1)
+        ident = np.identity(num_features)
+        diff = np.around(cov_matrix - ident,PREC)
+        assert not np.all(diff)
+        return
 
-def sfVariance(k,order):
-    SlowFeature = objectSetup(k,order)
-    Y = SlowFeature.slow_features
-    N = Y.shape[1]
-    cov_matrix = np.matmul(Y,Y.T)/(N-1)
+    def test_sfOrder(self):
+        Y = self.SFObj.features
+        num_samples = self.SFObj.N
+        num_features = self.SFObj.m
+        if num_features > MAX_FEATURES:
+            Y = np.copy(Y[:MAX_FEATURES,:])
+            num_features = MAX_FEATURES
 
-    num_features = Y.shape[0]
-    ident = np.identity(num_features)
-
-    diff = np.around(cov_matrix - ident,PREC)
+        precision = 10**(-PREC)
+        for i in range(0,num_features):
+            for j in range(i+1,num_features):
+                prod = np.matmul(Y[i,:],Y[j,:])/(num_samples-1)
+                assert abs(prod) < precision
+        return
     
-    assert not np.all(diff)
-    return
+class TestDynamicUnexpanded(DataFeatureProperties):
+    SFObj = objectSetup(2,1)
+            
+class TestStaticUnexpanded(DataFeatureProperties):
+    SFObj = objectSetup(0,1)
 
-def sfOrder(k,order):
-    SlowFeature = objectSetup(k,order)
-    Y = SlowFeature.slow_features
+class TestDynamicQuadexpanded(DataFeatureProperties):
+    SFObj = objectSetup(2,2)
 
-    num_features = Y.shape[0]
-    num_signals = Y.shape[1]
-
-    precision = 10**(-PREC)
-    for i in range(0,num_features):
-        for j in range(i+1,num_features):
-            prod = np.matmul(Y[i,:],Y[j,:])/(num_signals*SlowFeature.delta)
-            assert abs(prod) < precision
-    return
-
-def test_dataVariance_dynamic_quadexpanded():
-    dataVariance(4,2)
-    return
-
-def test_dataMean_dynamic_quadexpanded():
-    dataMean(4,2)
-    return
-
-def test_sfVariance_dynamic_quadexpanded():
-    sfVariance(4,2)
-    return
-
-def test_sfOrder_dynamic_quadexpanded():
-    sfOrder(4,2)
-    return
-
-def test_dataVariance_dynamic_unexpanded():
-    dataVariance(4,1)
-    return
-
-def test_dataMean_dynamic_unexpanded():
-    dataMean(4,1)
-    return
-
-def test_sfVariance_dynamic_unexpanded():
-    sfVariance(4,1)
-    return
-
-def test_sfOrder_dynamic_unexpanded():
-    sfOrder(4,1)
-    return
-
-def test_dataVariance_static_unexpanded():
-    dataVariance(0,1)
-    return
-
-def test_dataMean_static_unexpanded():
-    dataMean(0,1)
-    return
-
-def test_sfVariance_static_unexpanded():
-    sfVariance(0,1)
-    return
-
-def test_sfOrder_static_unexpanded():
-    sfOrder(0,1)
-    return
-
-def test_dataVariance_static_quadexpanded():
-    dataVariance(0,2)
-    return
-
-def test_dataMean_static_quadexpanded():
-    dataMean(0,2)
-    return
-
-def test_sfVariance_static_quadexpanded():
-    sfVariance(0,2)
-    return
-
-def test_sfOrder_static_quadexpanded():
-    sfOrder(0,2)
-    return
-
-def test_dataVariance_static_cubeexpanded():
-    dataVariance(0,3)
-    return
-
-def test_dataMean_static_cubeexpanded():
-    dataMean(0,3)
-    return
-
-def test_sfVariance_static_cubeexpanded():
-    sfVariance(0,3)
-    return
-
-def test_sfOrder_static_cubeexpanded():
-    sfOrder(0,3)
-    return
+class TestStaticQuadexpanded(DataFeatureProperties):
+    SFObj = objectSetup(0,2)
+        
+class TestStaticCubeExpanded(DataFeatureProperties):
+    SFObj = objectSetup(0,3)
