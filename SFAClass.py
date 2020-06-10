@@ -254,7 +254,7 @@ class SFA(Node):
             S_squared_e[i] = np.matmul(np.matmul
                                        (sample_e.T,Omega_e_inv),sample_e)
 
-        return(T_squared_d,T_squared_e,S_squared_d,S_squared_e)
+        return(T_squared_d,T_squared_e,S_squared_d,S_squared_e,s_d)
 
 
 if __name__ == "__main__":    
@@ -288,35 +288,60 @@ if __name__ == "__main__":
     
     T_dc, T_ec, S_dc, S_ec = SlowFeature.calculate_crit_values()
 
-    for name, test in [("Orig",X),("IDV(4)",T4),("IDV(5)",T5),("IDV(10)",T10)]:
-        T_d, T_e, S_d, S_e  = SlowFeature.calculate_monitors(test)
-        threshold = np.ones(test.shape[1])
-        # Plotting
+    data_iterable = [("Orig",X),("IDV(4)",T4),("IDV(5)",T5),("IDV(10)",T10)]
+    num_data = len(data_iterable)
+    
+    monitors = plt.figure("Monitors")
+    plt.subplots_adjust(wspace=0.4)
 
-        plt.figure(name)
-        plt.subplot(4,1,1)
+    features = plt.figure("5 Slowest Features")
+    plt.subplots_adjust(hspace=0.3)
+    
+    col_pos = 1
+    for name, test in data_iterable:
+        T_d, T_e, S_d, S_e, SF  = SlowFeature.calculate_monitors(test)
+        threshold = np.ones(test.shape[1])
+        
+        # Plotting
+        plt.figure("Monitors")
+        plt.subplot(4,num_data,col_pos)
         plt.title(name)
         plt.plot(T_d)
         plt.plot(T_dc*threshold)
         plt.ylabel("$T^2$")
         plt.xticks([])
 
-        plt.subplot(4,1,2)
+        plt.subplot(4,num_data,col_pos+num_data)
         plt.plot(T_e)
         plt.plot(T_ec*threshold)
         plt.ylabel("$T^2_e$")
         plt.xticks([])
 
-        plt.subplot(4,1,3)
+        plt.subplot(4,num_data,col_pos+num_data*2)
         plt.plot(S_d)
         plt.plot(S_dc*threshold)
         plt.ylabel("$S^2$")
         plt.xticks([])
 
-        plt.subplot(4,1,4)
+        plt.subplot(4,num_data,col_pos+num_data*3)
         plt.plot(S_e)
         plt.plot(S_ec*threshold)
         plt.ylabel("$S^2_e$")
         plt.xlabel("Sample")
 
+        plt.figure("5 Slowest Features")
+        for i in range(5):
+            plt.subplot(5,num_data,col_pos+num_data*i)
+
+            if i == 0:
+                plt.title(name)
+            if i == 4:
+                plt.xlabel("Sample")
+            else:
+                plt.xticks([])
+            
+            plt.plot(SF[i,:],label=str(i+1))
+
+        col_pos +=1
+        
     plt.show()
