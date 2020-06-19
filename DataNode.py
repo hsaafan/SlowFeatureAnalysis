@@ -24,7 +24,7 @@ class Node:
             raise TypeError("Expected a numpy ndarray object")
         if not data.ndim == 2:
             raise RuntimeError("Array input should be two dimensional, " +
-                               "current dimensions are: " + data.shape)
+                               "current dimensions are: " + str(data.shape))
         if not self.num_variables is None:
             if not data.shape[0] == self.num_variables:
                 raise RuntimeError("Variables do not match existing data")

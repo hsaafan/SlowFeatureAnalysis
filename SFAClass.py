@@ -292,12 +292,9 @@ if __name__ == "__main__":
     num_data = len(data_iterable)
     
     monitors = plt.figure("Monitors")
-    plt.subplots_adjust(wspace=0.4)
-
-    features = plt.figure("5 Slowest Features")
-    plt.subplots_adjust(hspace=0.3)
-    
+    plt.subplots_adjust(wspace=0.4)    
     col_pos = 1
+    
     for name, test in data_iterable:
         T_d, T_e, S_d, S_e, SF  = SlowFeature.calculate_monitors(test)
         threshold = np.ones(test.shape[1])
@@ -328,20 +325,29 @@ if __name__ == "__main__":
         plt.plot(S_ec*threshold)
         plt.ylabel("$S^2_e$")
         plt.xlabel("Sample")
-
-        plt.figure("5 Slowest Features")
-        for i in range(5):
-            plt.subplot(5,num_data,col_pos+num_data*i)
-
-            if i == 0:
-                plt.title(name)
-            if i == 4:
-                plt.xlabel("Sample")
-            else:
-                plt.xticks([])
-            
-            plt.plot(SF[i,:],label=str(i+1))
-
-        col_pos +=1
         
+        col_pos += 1
+
+
+    mid = int(Y.shape[0]/2)
+    slowest = Y[:5,:]
+    middle = Y[mid:mid+5,:]
+    fastest = Y[-5:,:]
+    plt.figure("Slow Features")
+    for i in range(5):
+        plt.subplot(5,3,3*i+1)
+        plt.plot(slowest[i,:])
+        if i == 0:
+            plt.title("Slowest")
+            
+        plt.subplot(5,3,3*i+2)
+        plt.plot(middle[i,:])
+        if i == 0:
+            plt.title("Middle")
+            
+        plt.subplot(5,3,3*i+3)
+        plt.plot(fastest[i,:])
+        if i == 0:
+            plt.title("Fastest")
+            
     plt.show()
