@@ -328,25 +328,34 @@ if __name__ == "__main__":
         
         col_pos += 1
 
-
     mid = int(Y.shape[0]/2)
     slowest = Y[:5,:]
     middle = Y[mid:mid+5,:]
     fastest = Y[-5:,:]
+
+    speed = np.around((X.shape[1]/(2*np.pi)) *
+                      np.sqrt(SlowFeature.features_speed),2)
+    speed_slowest = speed[:5]
+    speed_middle = speed[mid:mid+5]
+    speed_fastest = speed[-5:]
+
     plt.figure("Slow Features")
     for i in range(5):
         plt.subplot(5,3,3*i+1)
-        plt.plot(slowest[i,:])
+        plt.plot(slowest[i,:], label="$\eta$: " + str(speed_slowest[i]))
+        plt.legend(loc="lower left")
         if i == 0:
             plt.title("Slowest")
             
         plt.subplot(5,3,3*i+2)
-        plt.plot(middle[i,:])
+        plt.plot(middle[i,:], label="$\eta$: " + str(speed_middle[i]))
+        plt.legend(loc="lower left")
         if i == 0:
             plt.title("Middle")
             
         plt.subplot(5,3,3*i+3)
-        plt.plot(fastest[i,:])
+        plt.plot(fastest[i,:], label="$\eta$: " + str(speed_fastest[i]))
+        plt.legend(loc="lower left")
         if i == 0:
             plt.title("Fastest")
             

@@ -2,6 +2,7 @@ import numpy as np
 from numpy import linalg as LA
 from math import factorial as fac
 import matplotlib.pyplot as plt
+from SFAClass import SFA
 
 import TEP_Import as imp
 from DataNode import Node
@@ -58,10 +59,10 @@ class IncSFA(Node):
             self.J = J
             self.K = K
         else:
-            raise RuntimeError("Dimensions must follow J <= K <= I: " +
-                               "J = " + str(J) +
-                               "K = " + str(K) +
-                               "I = " + str(I))
+            raise RuntimeError("Dimensions must follow J <= K <= I" +
+                               ": J = " + str(J) +
+                               ", K = " + str(K) +
+                               ", I = " + str(I))
         
         self.V = np.eye(I,K)
         self.W = np.eye(K,J)
@@ -120,8 +121,8 @@ class IncSFA(Node):
                           "r = 2000, eta_l = 0, eta_h = 0.01", RuntimeWarning)
             self.theta = [20,200,3,2000,0,0.01,2000]
         elif len(theta) == 7:
-            if not(theta[0] < theta[1] and theta[1] < theta[6]):
-                raise RuntimeError("Values must be t1 < t2 < T")
+            if not(theta[0] < theta[1]):
+                raise RuntimeError("Values must be t1 < t2")
             if not(theta[4] < theta[5]):
                 raise RuntimeError("Values must be eta_l < eta_h") 
             self.theta = theta
@@ -283,23 +284,48 @@ class IncSFA(Node):
         Sets the rate at which the model updates based on parameters theta
         and current time index
         '''
+        t1, t2, c, r, nl, nh, T = theta
+
+        t += 1
         
+        if t <= t1:
+            mu_t = 0
+        elif t <= t2:
+            mu_t = c * (t-t1)/(t2-t1)
+        else:
+            mu_t = c + (t-t2)/r
+
         
-        eta_PCA = 0.01
-        eta_MCA = 0.01
+        eta_PCA = (1+mu_t)/t
+
+
+        if t <= T:
+            eta_MCA = nl + (nh-nl)*((t/T)**2)
+        else:
+            eta_MCA = nh
+
+            
         return(eta_PCA,eta_MCA)
 
 
 def data_poc(samples):
-
-    t = np.linspace(0,4*np.pi,num = samples)
-    x = np.empty((2,samples))
-    x[0,:] = np.sin(t) + np.power(np.cos(11*t),2)
-    x[1,:] = np.cos(11*t)
+    t = np.linspace(0,2*np.pi,num = samples)
+    X = np.empty((2,samples))
+    X[0,:] = np.sin(t) + np.power(np.cos(11*t),2)
+    X[1,:] = np.cos(11*t)
     
-    return(x)
+    return(X)
+
+def RMSE(epoch_data, true_data):
+    J = epoch_data.shape[0]
+    T = epoch_data.shape[1]
+    RMSE = np.zeros(J)
+    for j in range(J):
+        RMSE[j] = np.power(np.sum(np.power(epoch_data[j,:] - true_data[j,:],2))/T,0.5)
+    return(RMSE)
 
 if __name__ == "__main__":
+    '''
     # Import TEP and set up input data
     training_sets = list(imp.importTrainingSets([0]))
     testing_sets  = list(imp.importTestSets([4,5,10]))
@@ -330,38 +356,14 @@ if __name__ == "__main__":
     epochs = 1
     Y = np.zeros((J,X.shape[1]))
     Z = np.zeros((K,X.shape[1]))
-
-    for j in range(epochs):
-        for i in range(X.shape[1]):
-            Y[:,i] = SlowFeature.add_data(X[:,i])
-            if not SlowFeature.z_curr is None:
-                Z[:,i] = SlowFeature.z_curr.reshape(K)
-
-    '''
-    theta = [20,200,3,2000,0.07999999,0.08,2000]
-    num_vars = 2
-    J = 5
-    K = 5
-    n = 2
-    X = data_poc(500)
     epochs = 10
-    
-    SlowFeature = IncSFA(num_vars,J,K,theta,n)
-    Y = np.zeros((J,X.shape[1]))
-    Z = np.zeros((K,X.shape[1]))
-    
+
     for j in range(epochs):
         for i in range(X.shape[1]):
             Y[:,i] = SlowFeature.add_data(X[:,i])
             if not SlowFeature.z_curr is None:
                 Z[:,i] = SlowFeature.z_curr.reshape(K)
 
-    for i in range(2):
-        plt.subplot(1,2,i+1)
-        plt.plot(Y[i,:])
-        plt.plot(X[i,:])
-    
-    '''
     #Y = Y[:,-100:]
     mid = int(Y.shape[0]/2)
     slowest = Y[:5,:]
@@ -383,4 +385,66 @@ if __name__ == "__main__":
         plt.plot(fastest[i,:])
         if i == 0:
             plt.title("Fastest")
+    plt.show()
+    '''
+
+    X = data_poc(500)
+    theta = [20,200,4,5000,0,0.01,-1]
+    num_vars = 2
+    J = 5
+    K = 5
+    n = 2
+    epochs = 120
+
+    data = np.copy(X)
+    for j in range(1,epochs):
+        if j == 59:
+            X_2 = np.empty_like(X)
+            x1 = np.copy(X[0,:])
+            x2 = np.copy(X[1,:])
+            X_2[0,:] = x2
+            X_2[1,:] = x1
+            data_2 = np.copy(X_2)
+            for k in range(60,epochs):
+                data_2 = np.concatenate((data_2,X_2),axis=1)
+            SlowFeature_switch = SFA(data_2,None,n)
+            true_data_2 = SlowFeature_switch.train()
+            break
+        data = np.concatenate((data,X),axis = 1)
+        
+    SlowFeature_orig = SFA(data,None,n)
+
+    if epochs > 59:
+        true_data = np.concatenate((SlowFeature_orig.train(),true_data_2),
+                                   axis=1)
+    else:
+        true_data = SlowFeature_orig.train()
+    
+    SlowFeature = IncSFA(num_vars,J,K,theta,n)
+    Y = np.zeros((J,X.shape[1]*epochs))
+    Z = np.zeros((K,X.shape[1]*epochs))
+    err = np.zeros((J,epochs))
+    
+    for j in range(epochs):
+        if j == 59:
+            x1 = np.copy(X[0,:])
+            x2 = np.copy(X[1,:])
+            X[0,:] = x2
+            X[1,:] = x1
+        
+        for i in range(X.shape[1]):
+            Y[:,X.shape[1]*j+i] = SlowFeature.add_data(X[:,i])
+            if not SlowFeature.z_curr is None:
+                Z[:,X.shape[1]*j+i] = SlowFeature.z_curr.reshape(K)
+
+        epoch_data = Y[:,j*X.shape[1]:(j+1)*X.shape[1]]
+        epoch_true = true_data[:,j*X.shape[1]:(j+1)*X.shape[1]]
+        err[:,j] = RMSE(epoch_data,epoch_true)
+
+    
+    for i in range(J):
+        plt.subplot(J,1,i+1)
+        plt.plot(Y[i,:])
+        plt.plot(true_data[i,:])
+        #plt.plot(err[i,:])
     plt.show()
