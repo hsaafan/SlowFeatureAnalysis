@@ -19,8 +19,7 @@ class ISFA(object):
     offset = None                 # Offset for each variable
     stdv = None                   # Standard deviation for each variable
     Lambda = None                 # Current eigenvalues
-    tol = 1e-6                    # Stopping criteria for eigenvalues
-    eta = 0.01                    # Learning rate for offset and stdv
+    tol = 0.05                    # Stopping criteria for eigenvalues
 
     def __init__(self, num_vars, num_samples, weights = None):
         '''
@@ -95,12 +94,9 @@ class ISFA(object):
     def _normalize_data(self, data):
         '''
         Takes a new set of weights and recalculates normalized data
-        '''
-        
-        weighted_data = self._weight_data(data)
-        centered_data = self._center(weighted_data)
+        '''        
+        centered_data = self._center(data)
         normalized_data = self._whiten(centered_data)
-        self.eta = 0.1
         return(normalized_data)
 
     def _weight_data(self,data):
@@ -111,41 +107,24 @@ class ISFA(object):
         '''
         Centers all variables around 0
         '''
-        self.offset = (1-self.eta)*self.offset + self.eta*np.mean(data, axis = 1).reshape((self.num_vars,1))
-        #self.offset = np.mean(data, axis = 1).reshape((self.num_vars,1))
+        weighted_data = self._weight_data(data)
+        self.offset = (np.sum(weighted_data,axis=1)/self.weights_total).reshape(self.num_vars,1)
         centered_data = data - self.offset
         return(centered_data)
 
-    def _calculate_variance(self,centered_data_1,centered_data_2=None):
-        '''
-        Calculate the variance for each variable
-        '''
-        if centered_data_2 is None:
-            centered_data_2 = np.copy(centered_data_1)
-
-        variance = np.empty((self.num_vars,1))
-        
-        sqr = np.multiply(centered_data_1,centered_data_2)
-        weighted_sqr = self._weight_data(sqr)
-        variance = np.sum(weighted_sqr, axis=1)/self.weights_total
-        
-        return(variance)
-    
-    def _whiten(self, centered_data):
+    def _whiten(self,centered_data):
         ''' 
-        Scale blocks to unit variance if they have been centered
+        Scale variables to unit variance if they have been centered
         '''
-        variance = self._calculate_variance(centered_data, None)
-        self.stdv = (1-self.eta)*self.stdv + self.eta*(variance ** (1/2)).reshape((self.num_vars,1))
-        # self.stdv = (variance ** (1/2)).reshape((self.num_vars,1))
-        whitened_data = centered_data / self.stdv
-        
+        sqr = np.multiply(centered_data,centered_data)
+        weighted_sqr = self._weight_data(sqr)
+        stdv = (np.sum((weighted_sqr/self.weights_total),axis=1) ** (1/2)).reshape(self.num_vars,1)
+        whitened_data = centered_data / stdv
         return(whitened_data)
     
     def _calculate_AB(self, x_hat, y_hat):
         A = np.zeros((self.num_vars,self.num_vars))
         B = np.zeros((self.num_vars,self.num_vars))
-
         for i in range(self.num_samples):
             x_sample = x_hat[:,i].reshape((self.num_vars,1))
             y_sample = y_hat[:,i].reshape((self.num_vars,1))
@@ -153,15 +132,17 @@ class ISFA(object):
             diff = x_sample - y_sample
             xsqr = np.matmul(x_sample, x_sample.T)
             ysqr = np.matmul(y_sample, y_sample.T)
-
-            grp_A = self.weights[i] * np.matmul(diff, diff.T)
-            grp_B = self.weights[i] * (xsqr + ysqr)
+            
+            grp_A = np.matmul(diff, diff.T)
+            grp_B = xsqr + ysqr
             A += grp_A
             B += grp_B
             
         A /= self.weights_total
         B /= 2*self.weights_total
-
+        a,b,c = np.svd(B)
+        #A = np.cov(x_hat - y_hat)
+        #B = (np.cov(x_hat) + np.cov(y_hat))/(2*self.weights_total)
         return(A, B)
     
     def _calculate_trans_mat(self, A, B):
@@ -169,14 +150,20 @@ class ISFA(object):
         Solving the generalized eigenvalue problem
         '''
         # TODO: Make this more efficient
-
         eps = 1e-5
         ident = np.eye(B.shape[0])
-        B_inv = (B + eps * ident) ** (-1)
+        B_inv = LA.inv(B + eps * ident)
         C = np.matmul(B_inv, A)
 
         Lambda, W = LA.eigh(C)
         Lambda, W = self._order(Lambda, W)
+        for col in range(W.shape[1]):
+            wj = W[:,col]
+            W[:,col] = wj/(np.matmul(np.matmul(wj.T,B),wj)**(1/2))
+            for i in range(col):
+                temp = np.matmul(np.matmul(wj.T,B),W[:,i])
+                temp2 = np.matmul(np.matmul(wj.T,B),wj)
+            pass
         return(Lambda, W)
 
     def _calculate_slow_features(self, W, x_hat, y_hat):
@@ -200,8 +187,8 @@ class ISFA(object):
         for i in range(self.num_samples):
             summation = 0
             for j in range(self.num_vars):
-                summation += (SFA[j,i] ** 2)/Lambda[j]
-            T[i] = np.abs(summation)
+                summation += (SFA[j,i] ** 2)/(Lambda[j])
+            T[i] = summation
             weights[i] = 1 - scipy.stats.chi2.cdf(T[i], self.num_vars)
         return(weights)
 
@@ -211,28 +198,28 @@ class ISFA(object):
         Weights are updated after each iteration
         '''
         finished = False
-        err = 1e4
+        err = 1e20
         
         while not finished:
             # Normalize data
             x_hat = self._normalize_data(x)
             y_hat = self._normalize_data(y)
-            
+
             # Calculate transformation matrix and speeds
             A, B = self._calculate_AB(x_hat, y_hat)
             Lambda, W = self._calculate_trans_mat(A, B)
+
             # Checks if speeds have converged
             prev_err = err
             err = LA.norm(Lambda - Lambda_prev)
-            if  (err - prev_err) < self.tol:
+            rel_err = np.abs(err - prev_err)/np.abs(prev_err)
+            if  rel_err < self.tol:
                 finished = True
             else:
-                Lambda_prev = Lambda
-
+                Lambda_prev = np.copy(Lambda)
             # Calculates slow features and updates weights
             SFA = self._calculate_slow_features(W, x_hat, y_hat)
             self._store_weights(self._calculate_weights(SFA, Lambda))
-            
         return(SFA, W, Lambda)
 
     def _order(self,eigenvalues,eigenvectors):
@@ -242,7 +229,7 @@ class ISFA(object):
         p = eigenvalues.argsort()
         vals = eigenvalues[p]
         vecs = eigenvectors[p,:]
-
+        
         return(vals,vecs)
 
     def train(self, x, y):
@@ -256,10 +243,9 @@ class ISFA(object):
                  x.shape == (self.num_vars, self.num_samples)):
             warnings.warn("Data passed not the right shape",RuntimeWarning)
             SFA = np.zeros((self.num_vars, self.num_samples))
-        else:            
+        else:
             if self.Lambda is None:
-                # First training data passed
-                
+                # First training data passed                
                 self.Lambda = np.ones((self.num_vars))
             SFA, W, self.Lambda = self._iterate(x, y, self.Lambda)
             
@@ -286,7 +272,7 @@ if __name__ == "__main__":
     T5 = np.delete(T5,ignored_var,axis=0)
     T10 = np.delete(T10,ignored_var,axis=0)
 
-    num_samples = 250
+    num_samples = 100
     num_vars = X.shape[0]
     total_samples = X.shape[1]
     SlowFeature = ISFA(num_vars,num_samples)
@@ -294,17 +280,16 @@ if __name__ == "__main__":
     W = np.ones((X.shape[1]))
     
     for i in range(num_samples,total_samples,num_samples):
-        Y[:,i-num_samples:i] = SlowFeature.train(X[:,i:i+num_samples],
-                                                 X[:,i-num_samples:i])
+        Y[:,i-num_samples:i] = SlowFeature.train(X[:,i-num_samples:i],
+                                                 X[:,i:i+num_samples])
         W[i-num_samples:i] = SlowFeature.weights
     '''
     for i in range(num_samples, total_samples):
         Y[:,i] = SlowFeature.train(X[:,i:i+num_samples],
                                    X[:,i-num_samples:i])[:,0]
     '''
-    Y = Y[:,:num_samples]
     W = W[:num_samples]
-
+    Y = Y[:,:-num_samples]
     mid = int(Y.shape[0]/2)
     slowest = Y[:5,:]
     middle = Y[mid:mid+5,:]
