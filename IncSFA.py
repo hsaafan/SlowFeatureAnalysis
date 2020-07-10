@@ -40,7 +40,7 @@ class IncSFA(Node):
     dynamic = False               # Whether any lagged copies are used or not
     
     def __init__(self,num_variables, J, K, theta = None,
-                 expansion_order = None, dynamic_copies = None):
+                 expansion_order = 1, dynamic_copies = 0):
         '''
         Constructor for class which takes in desired dimensions, scheduling
         paramters and preprocessing parameters
@@ -49,20 +49,10 @@ class IncSFA(Node):
         self._store_expansion_order(expansion_order)
         self._store_theta(theta)
 
-        # Get dimension of preprocessed signal
-        # From dynamization
-        I_dyn = num_variables*(self.dynamic_copies + 1) 
-        # From expansion
-        # Order 1
-        I = I_dyn
-        for r in range(2,self.expansion_order+1):
-            # Order 2 -> expansion_order
-            I += fac(r+I_dyn-1)/(fac(r)*(fac(I_dyn-1)))
-        I = int(I)
+        I = self._get_num_vars(num_variables,dynamic_copies, expansion_order)
 
         if (J <= K and K <= I):
             self.I = I
-            self.I_dyn = I_dyn
             self.J = J
             self.K = K
         else:
@@ -71,7 +61,8 @@ class IncSFA(Node):
                                ", K = " + str(K) +
                                ", I = " + str(I))
 
-        
+        self.W_cov = np.zeros((K,K))
+        self.cuttoff = int(J/2)
         self.V = np.random.randn(I,K)
         self.W = np.random.randn(K,J)
         self.v_gam = np.zeros((K,1)) + eps
@@ -81,10 +72,25 @@ class IncSFA(Node):
             self.V[:,col] = self.V[:,col]/LA.norm(self.V[:,col])
         for col in range(J):
             self.W[:,col] = self.W[:,col]/LA.norm(self.W[:,col])
-        
         self.Lambda = np.ones((J,1))
         return
 
+    def _get_num_vars(self, original_num_vars,dynamic_copies, expansion_order):
+        '''
+        Calculates the number of variables being input based on how many lagged copies
+        and the expansion order
+        '''
+        # From dynamization
+        I_dyn = original_num_vars*(dynamic_copies + 1) 
+        # From expansion
+        # Order 1
+        I = I_dyn
+        for r in range(2,expansion_order+1):
+            # Order 2 -> expansion_order
+            I += fac(r+I_dyn-1)/(fac(r)*(fac(I_dyn-1)))
+        I = int(I)
+        return(I)
+    
     def _store_dynamic_copies(self,d):
         '''
         Perform checks on number of dynamic copies entered and store value
@@ -162,53 +168,45 @@ class IncSFA(Node):
 
         return(dyn_signal)
 
-    def _CCIPCA_update(self, V, K, u, eta):
-        '''
-        Updates current principal component matrix with new sample u
-        and parameter eta
-        '''
-        u = u.reshape((u.shape[0],1))
-
-        for i in range(K):
-            col = np.copy(V[:,i]).reshape((V.shape[0],1))
-            col_norm = LA.norm(col)
-            
-            # Find new principal component
-            prev = (1-eta)*col
-            new = eta*(np.matmul(u.T,col)/col_norm)*u
-
-            col_new = prev + new
-            col_new_norm = LA.norm(col_new)
-            col_normed = col_new/col_new_norm
-            V[:,i] = col_new.reshape((V.shape[0]))
-            
-            # Update residuals
-            u = u - np.matmul(u.T,col_normed)*col_normed
+    def CCIPA(self, V, K, x, eta):
+        max_iter = int(np.min([K,self.t]))
+        u = np.empty((self.I, max_iter + 1))
+        u[:,0] = x.reshape((self.I))
+        for i in range(max_iter):
+            if i == self.t:
+                V[:,i] = u[:,i]
+            else:
+                V_col = V[:,i].reshape((self.I,1))
+                u_col = u[:,i].reshape((self.I,1))
+                
+                prev = (1-eta)*V_col
+                new = eta * (u_col @ u_col.T) @ (V_col / LA.norm(V_col))
+                V_col_new = prev + new
+                V_col_new_normed = V_col_new/ LA.norm(V_col_new)
+                V[:,i] = (V_col_new).reshape((self.I))
+                u[:, i+1] = (u_col - (u_col.T @  V_col_new_normed ) * V_col_new_normed).reshape((self.I))
 
         return(V)
-    
-    def _construct_whitening_matrix(self, V):
-        '''
-        Construcs a whitening matrix W based on principal components V 
-        '''
-        # Initialize
-        V_hat = np.empty_like(V)
-        K = V.shape[1]
-        inv_square_v = np.empty((K))
 
+    def WhiteningMatrix(self,V):
+        D = np.empty((V.shape[1]))
+        for i in range(V.shape[1]):
+            lam = LA.norm(V[:,i])
+            V[:,i] = V[:,i] / lam
+            D[i] = (lam + eps) ** (-1/2)
         
-        for i in range(K):
-            # Update columns of V_hat
-            col = np.copy(V[:,i])
-            col_norm = LA.norm(col)
-            V_hat[:,i] = col/col_norm
-            # Get the inverse square of the norm of each column
-            inv_square_v[i] = (col_norm + 1e-18) ** (-1/2)
+        S = np.diag(D) @ V.T
 
-
-        D = np.diag(inv_square_v)
-        S = np.matmul(V_hat,D)
         return(S)
+
+    def CIMCA(self, W, eta, x):
+        self.W_cov = eta * self.W_cov + ((1-eta) * x @ x.T)
+        R = self.W_cov / self.t
+        delW = eta * (R @ W - W.T @ R @ W @ W + W @ ((W.T @  W) ** 2 ) - W)
+        W = W + delW
+        for col in range(W.shape[1]):
+            W[:,col] = W[:,col] / LA.norm(W[:,col])
+        return(W)
 
     def _CIMCA_update(self,W,J,z_dot,gamma,eta):
         '''
@@ -259,33 +257,38 @@ class IncSFA(Node):
         Function used to update the IncSFA model with new data points
         Outputs the slow features for the signal input
         '''
-        
         # Default values
         y = np.zeros((self.J))
         stats = [0,0,0,0]
-
+        ''' Signal preprocessing '''
         # Dynamization
         raw_signal = self._dynamize(raw_signal)
-        if raw_signal.shape[0] < self.I_dyn:
-            # Return a default value if not enough lagged copies available
-            return(y, stats)
-        
-        # Nonlinear expansion
         raw_signal = raw_signal.reshape(raw_signal.shape[0],1)
         x = self.nonlinear_expansion(raw_signal,self.expansion_order)
-
-        # Get new learning rates according to schedule
+        if x.shape[0] < self.I:
+            # Return a default value if not enough lagged copies available
+            return(y, stats)
+        # Nonlinear expansion
+        
+        ''' Update Learning rates '''
         eta_PCA, eta_MCA = self._learning_rate_schedule(self.theta, self.t)
 
-        # Mean estimation and centering
+        ''' Signal normalization '''
         if self.t == 0:
+            # Initial values
             self.x_bar = x + eps
-            self.x_std = np.abs(x) + eps
+            self.x_var = np.ones_like(x)
+            self.x_ss = np.zeros_like(x)
         else:
-            self.x_bar = (1-eta_PCA)*self.x_bar + eta_PCA*x
-        u = (x - self.x_bar)/self.x_std
+            # Updates
+            prev_cent = x - self.x_bar
+            self.x_bar = self.x_bar + (x - self.x_bar) / (self.t + 1)
+            curr_cent = x - self.x_bar
+            self.x_ss = self.x_ss + prev_cent * curr_cent
+            self.x_var = self.x_ss / self.t
+        u = (x - self.x_bar)/np.sqrt(self.x_var)
 
-        # Update principal components and create whitening matrix
+        ''' Sphering '''
         self.V = self.CCIPA(self.V,self.K,u,eta_PCA)
         S = self.WhiteningMatrix(self.V)
         
@@ -294,26 +297,31 @@ class IncSFA(Node):
             self.z_prev = np.copy(self.z_curr)
         self.z_curr = S @ u
 
-
+        ''' Transformation '''
         # t > 0, derivative can be calculated, proceed to update model
         if self.t > 0:
             z_dot = (self.z_curr - self.z_prev)/self.delta
-            
+            #'''
             # Update first PC in whitened difference space and gamma
             self.v_gam = self.CCIPA(self.v_gam, 1, z_dot, eta_PCA)
             gam = self.v_gam/LA.norm(self.v_gam)
 
             # Updates minor components
             self.W = self._CIMCA_update(self.W,self.J,z_dot,gam,eta_MCA)
-            y = self.z_curr.T @ self.W
+            #'''
+            #self.W = self.CIMCA(self.W, eta_MCA, z_dot)
+            y =  self.z_curr.T @ self.W
+
             self.y_prev = np.copy(self.y_curr)
             self.y_curr = np.copy(y)
         
+        ''' Update monitoring stats '''
         if self.t > 2:
             y_dot = (self.y_curr - self.y_prev)/self.delta
             stats = self.monitoring_stats(self.y_curr, y_dot, eta_PCA, self.cuttoff)
-        self.t += 1 # Increase time index
         
+        ''' Update model and return '''
+        self.t += 1 # Increase time index
         return(y, stats)
 
     def _learning_rate_schedule(self, theta, t):
@@ -322,59 +330,21 @@ class IncSFA(Node):
         and current time index
         '''
         t1, t2, c, r, nl, nh, T = theta
-
-        t += 1
-        
+        t += 1 # Prevents divide by 0 errors
         if t <= t1:
-            mu_t = -0.5
+            mu_t = 0
         elif t <= t2:
             mu_t = c * (t-t1)/(t2-t1)
         else:
             mu_t = c + (t-t2)/r
-
-        
         eta_PCA = (1+mu_t)/t
-
-
         if t <= T:
             eta_MCA = nl + (nh-nl)*((t/T)**2)
         else:
             eta_MCA = nh
-
-            
         return(eta_PCA,eta_MCA)
 
-    def CCIPA(self, V, K, x, eta):
-        max_iter = int(np.min([K,self.t]))
-        u = np.empty((self.I, max_iter + 1))
-        u[:,0] = x.reshape((self.I))
-        for i in range(max_iter):
-            if i == self.t:
-                V[:,i] = u[:,i]
-            else:
-                V_col = V[:,i].reshape((self.I,1))
-                u_col = u[:,i].reshape((self.I,1))
-                
-                prev = (1-eta)*V_col
-                new = eta * (u_col @ u_col.T) @ (V_col / LA.norm(V_col))
-                V_col_new = prev + new
-                V_col_new_normed = V_col_new/ LA.norm(V_col_new)
-                V[:,i] = (V_col_new).reshape((self.I))
-                u[:, i+1] = (u_col - (u_col.T @  V_col_new_normed ) * V_col_new_normed).reshape((self.I))
-
-        return(V)
-
-    def WhiteningMatrix(self,V):
-        D = np.empty((V.shape[1]))
-        for i in range(V.shape[1]):
-            lam = LA.norm(V[:,i])
-            V[:,i] = V[:,i] / lam
-            D[i] = (lam + eps) ** (-1/2)
-        
-        S = V @ np.diag(D) @ V.T
-
-        return(S)
-
+#''' Proof of concept
 def data_poc(samples):
     t = np.linspace(0,2*np.pi,num = samples)
     X = np.empty((2,samples))
@@ -390,16 +360,15 @@ def RMSE(epoch_data, true_data):
     for j in range(J):
         RMSE[j] = np.power(np.sum(np.power(epoch_data[j,:] - true_data[j,:],2))/T,0.5)
     return(RMSE)
+#'''
 
-
-def run(theta, epochs, fignum = 0, figdpi = 450, plot_features = 5, plot_last_epoch = True):
+def run(theta, epochs, fignum = 0, figdpi = 200, plot_features = 5, plot_last_epoch = True):
 
     training_sets = list(imp.importTrainingSets([0]))
     X   = training_sets[0][1]
     ignored_var = list(range(22,41))
     X = np.delete(X,ignored_var,axis=0)
     d = 2    # Lagged copies
-    q = 0.1  # Partition fraction
     n = 1    # Expansion order
 
     # Run SFA
@@ -421,7 +390,8 @@ def run(theta, epochs, fignum = 0, figdpi = 450, plot_features = 5, plot_last_ep
             run = SlowFeature.add_data(X[:,i])
             Y[:,j*X.shape[1]+i] = (run[0]).reshape((J))[:cuttoff]
             stats[:,j*X.shape[1]+i] = run[1]
-            
+
+
     if plot_last_epoch:
         start = -X.shape[1]
         Y = Y[:,start:]
@@ -447,47 +417,60 @@ def run(theta, epochs, fignum = 0, figdpi = 450, plot_features = 5, plot_last_ep
     _f = plt.figure(features_figname)
     plt.figtext(0.05,0.05,figure_text)
 
+    speeds = np.sum(np.diff(Y[:,-X.shape[1]:]) ** 2, axis=1) / (X.shape[0])
+    speed = np.around((X.shape[1]/(2*np.pi)) * np.sqrt(speeds),2)
+    p = speeds.argsort()
+    speed = speed[p]
+    Y = Y[p,:]
+
     mid = int(Y.shape[0]/2)
     slowest = Y[:plot_features,:]
     middle = Y[mid:mid+plot_features,:]
     fastest = Y[-plot_features:,:]
-    
+
+    speed_slowest = speed[:5]
+    speed_middle = speed[mid:mid+5]
+    speed_fastest = speed[-5:]
+
     for i in range(plot_features):
         plt.subplot(plot_features,3,3*i+1)
-        plt.plot(slowest[i,:])
+        plt.plot(slowest[i,:], label="$\eta$: " + str(speed_slowest[i]))
+        plt.legend(loc="lower left")
         if i == 0:
             plt.title("Slowest")
             
         plt.subplot(plot_features,3,3*i+2)
-        plt.plot(middle[i,:])
+        plt.plot(middle[i,:], label="$\eta$: " + str(speed_middle[i]))
+        plt.legend(loc="lower left")
         if i == 0:
             plt.title("Middle")
             
         plt.subplot(plot_features,3,3*i+3)
-        plt.plot(fastest[i,:])
+        plt.plot(fastest[i,:], label="$\eta$: " + str(speed_fastest[i]))
+        plt.legend(loc="lower left")
         if i == 0:
             plt.title("Fastest")
+    _f.set_size_inches(16, 9)
     plt.savefig(features_figname,dpi=figdpi)
     plt.close(fig=_f)
-    print("\a")
+    print("\a\a\a")
 
     
 if __name__ == "__main__":
-    epochs = 5
-    t1 = [50]
-    t2 = [200]
+    epochs = 2
+    t1 = [10]
+    t2 = [100]
     c  = [4]
-    r  = [1000]
-    nl = [0.05]
-    nh = [0.1]
-    T = [100, 1000]
-
+    r  = [100]
+    nl = [0]
+    nh = [0.05]
+    T = [200]
     theta = [t1, t2, c, r, nl, nh, T]
     parameter_list = list(itertools.product(*theta))
 
     for i, theta in enumerate(parameter_list):
         print(str(i+1).rjust(3,'0') + "/" + str(len(parameter_list)) + ": Running ", str(theta))
-        run(theta, epochs, str(i).rjust(3,'0'))
+        run(theta, epochs, str(i).rjust(3,'0'), plot_last_epoch=False)
     
     ''' Proof of concept from paper
     X = data_poc(500)
@@ -535,7 +518,8 @@ if __name__ == "__main__":
             X[1,:] = x1
         
         for i in range(X.shape[1]):
-            Y[:,X.shape[1]*j+i] = SlowFeature.add_data(X[:,i])
+            run = SlowFeature.add_data(X[:,i])
+            Y[:,j*X.shape[1]+i] = (run[0]).reshape((J))
             if not SlowFeature.z_curr is None:
                 Z[:,X.shape[1]*j+i] = SlowFeature.z_curr.reshape(K)
 
@@ -543,7 +527,7 @@ if __name__ == "__main__":
         epoch_true = true_data[:,j*X.shape[1]:(j+1)*X.shape[1]]
         err[:,j] = RMSE(epoch_data,epoch_true)
 
-    
+
     for i in range(J):
         plt.subplot(J,1,i+1)
         plt.plot(Y[i,:])
