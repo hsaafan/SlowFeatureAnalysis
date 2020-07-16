@@ -201,7 +201,6 @@ class SFA(Node):
 
         return(self.T_d_crit,self.T_e_crit,self.S_d_crit,self.S_e_crit)
 
-
     def calculate_monitors(self, online_data):
         # Takes in a batch of online data and returns an array
         # that contains the statistical indices
