@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.linalg as LA
+from scipy import stats
 import matplotlib.pyplot as plt
 
 import TEP_Import as imp
@@ -231,6 +232,41 @@ class IncSFA(IncrementalNode):
         self.t += 1 # Increase time index
         return(y, stats)
 
+    def evaluate(self, raw_signal, alpha):
+        '''
+        Function used to test the IncSFA model with new data points
+        Outputs the slow features for the signal input
+        raw_signal         -> The data point used to test the model and calculate the features
+        '''
+        # Default values
+        y = np.zeros((self.J,1))
+        stats = [0,0,0,0]
+        stats_crit = [0,0,0,0]
+
+        ''' Signal preprocessing '''
+        raw_signal = raw_signal.reshape((raw_signal.shape[0], 1))
+        x, is_full = self.process_signal(raw_signal)
+        if not is_full:
+            raise RuntimeError("Not enough data has been passed to the model to test it")
+
+        ''' Signal centering and whitening '''
+        self.z_prev = np.copy(self.z_curr)
+        self.z_curr = self.IncNormObject.normalize_similar(x)
+
+        ''' Transformation '''
+        self.y_prev = np.copy(self.y_curr)
+        y = (self.z_curr.T @ self.W) @ self.perm
+        self.y_curr = y
+        
+        # Approximate derivative
+        y_dot = (self.y_curr - self.y_prev)/self.delta
+        
+        # Calculate the monitoring stats
+        stats = self.calculate_monitoring_stats(self.Lambda, y, y_dot, self.cutoff)
+        stats_crit = self.calculate_crit_values(alpha)
+
+        return(y, stats, stats_crit)
+
     def _learning_rate_schedule(self, theta, t):
         '''
         Sets the rate at which the model updates based on parameters theta
@@ -254,43 +290,131 @@ class IncSFA(IncrementalNode):
             eta_MCA = nh
         return(eta_PCA,eta_MCA)
 
+    def calculate_crit_values(self,alpha=0.01):
+        '''
+        Calculate critical values for monitoring
+        '''
+        if alpha > 1:
+            raise ValueError("Confidence level is capped at 1")
+        p = 1 - alpha
+        N  = self.t
+        Md = self.cutoff
+        Me = self.J - self.cutoff
+        gd = (Md*(N**2-2*N))/((N-1)*(N-Md-1))
+        ge = (Me*(N**2-2*N))/((N-1)*(N-Me-1))
 
-def run(theta, epochs, fignum = 0, figdpi = 200, plot_features = 5, plot_last_epoch = True):
+        T_d_crit = stats.chi2.ppf(p,Md)
+        T_e_crit = stats.chi2.ppf(p,Me)
+        S_d_crit = gd*stats.f.ppf(p,Md,N-Md-1)
+        S_e_crit = ge*stats.f.ppf(p,Me,N-Me-1)
 
+        crit_vals = [T_d_crit, T_e_crit, S_d_crit, S_e_crit]
+
+        return(crit_vals)
+
+def run(theta, epochs, fignum = 0, figdpi = 200, plot_features = 5, plot_last_epoch = True, alert = True):
+    # Import data
     training_sets = list(imp.importTrainingSets([0]))
-    X   = training_sets[0][1]
+    testing_sets  = list(imp.importTestSets([4,5,10]))
+
+    # Delete ignored variables
+    ignored_var = list(range(22,41))
+
+    X = training_sets[0][1]
+    T4  = testing_sets[0][1].T
+    T5  = testing_sets[1][1].T
+    T10 = testing_sets[2][1].T
+    data_points = X.shape[1]
+
+    # Remove unwanted variables from data
     ignored_var = list(range(22,41))
     X = np.delete(X,ignored_var,axis=0)
-    d = 2    # Lagged copies
-    n = 1    # Expansion order
+    T4 = np.delete(T4,ignored_var,axis=0)
+    T5 = np.delete(T5,ignored_var,axis=0)
+    T10 = np.delete(T10,ignored_var,axis=0)
 
-    # Run SFA
-    num_vars = 33
+    # IncSFA parameters
+    num_vars = X.shape[0]
     K = 20
     J = 20
     cutoff = 10
+    d = 2    # Lagged copies
+    n = 1    # Expansion order
 
+    # Create IncSFA object
     SlowFeature = IncSFA(num_vars,J,K,theta,n,d)
     SlowFeature.delta = 3
     SlowFeature.cutoff = cutoff
 
-    Y = np.zeros((J,X.shape[1]*epochs))
-    Z = np.zeros((K,X.shape[1]*epochs))
-    stats = np.zeros((4,X.shape[1]*epochs))
+    # Create empty arrays to store outputs
+    total_data_points = data_points * epochs
+    Y = np.zeros( (J, total_data_points) )
+
+    stats = np.zeros( (4, total_data_points) )
+    stats_crit = np.zeros( (4, total_data_points) )
     
+    # Train model
     for j in range(epochs):
         print("Running epoch " + str(j+1) + "/" + str(epochs))
         for i in range(X.shape[1]):
-            run = SlowFeature.add_data(X[:,i], calculate_monitors=True)
-            Y[:,j*X.shape[1]+i] = run[0].reshape((J))
-            stats[:,j*X.shape[1]+i] = run[1]
-            if not SlowFeature.z_curr is None:
-                Z[:,j*X.shape[1]+i] = SlowFeature.z_curr.reshape((K))
+            pos = j*X.shape[1]+i
+            run = SlowFeature.add_data(X[:,i])
+
+            # Store data
+            Y[:,pos] = run[0].reshape((J))
+            stats[:,pos] = run[1]
+
+    # Test data
+    test_data = [("IDV(4)",T4),("IDV(5)",T5),("IDV(10)",T10)]
+    num_tests = len(test_data)
+    col_pos = 1
+    monitors_figname = "Monitors" + str(fignum)
+    _m = plt.figure(monitors_figname)
+    plt.subplots_adjust(wspace=0.4)    
     
+    for name, test in test_data:
+        data_points = test.shape[1]
+        stats = np.zeros( (4, data_points) )
+        stats_crit = np.zeros( (4, data_points) )
+        
+        for i in range(data_points):
+            _, stats[:,i], stats_crit[:,i]  = SlowFeature.evaluate(test[:,i], alpha = 0.05)
+        
+        # Plotting
+        plt.subplot(4,num_tests,col_pos)
+        plt.title(name)
+        plt.plot(stats[0])
+        plt.plot(stats_crit[0])
+        plt.ylabel("$T^2$")
+        plt.xticks([])
+
+        plt.subplot(4,num_tests,col_pos+num_tests)
+        plt.plot(stats[1])
+        plt.plot(stats_crit[1])
+        plt.ylabel("$T^2_e$")
+        plt.xticks([])
+
+        plt.subplot(4,num_tests,col_pos+num_tests*2)
+        plt.plot(stats[2])
+        plt.plot(stats_crit[2])
+        plt.ylabel("$S^2$")
+        plt.xticks([])
+
+        plt.subplot(4,num_tests,col_pos+num_tests*3)
+        plt.plot(stats[3])
+        plt.plot(stats_crit[3])
+        plt.ylabel("$S^2_e$")
+        plt.xlabel("Sample")
+
+        col_pos += 1
+    _m.set_size_inches(16, 9)
+    plt.savefig(monitors_figname,dpi=figdpi)
+    plt.close(fig=_m)
+
+    # Forget everything except last epoch
     if plot_last_epoch:
-        start = -X.shape[1]
-        Y = Y[:,start:]
-        stats = stats[:,start:]
+        Y = Y[:,-data_points:]
+        stats = stats[:,-data_points:]
     
     ''' Plotting '''
     figure_text = ( "Epochs: " + str(epochs) + " | $t_1=$ " + str(theta[0]) +
@@ -318,17 +442,17 @@ def run(theta, epochs, fignum = 0, figdpi = 200, plot_features = 5, plot_last_ep
     _f = plt.figure(features_figname)
     plt.figtext(0.25,0.05,figure_text)
 
-    speeds = np.sum((np.diff(Y)/3) ** 2, axis=1) / (Y.shape[1])
-    speed = np.around((Y.shape[1]/(2*np.pi)) * np.sqrt(speeds),2)
+    # Calculate eta values
+    eta = np.around((Y.shape[1]/(2*np.pi)) * np.sqrt(SlowFeature.Lambda),2)
 
     mid = int(Y.shape[0]/2)
     slowest = Y[:plot_features,:]
     middle = Y[mid:mid+plot_features,:]
     fastest = Y[-plot_features:,:]
 
-    speed_slowest = speed[:plot_features]
-    speed_middle = speed[mid:mid+plot_features]
-    speed_fastest = speed[-plot_features:]
+    speed_slowest = eta[:plot_features]
+    speed_middle = eta[mid:mid+plot_features]
+    speed_fastest = eta[-plot_features:]
 
     for i in range(plot_features):
         plt.subplot(plot_features,3,3*i+1)
@@ -351,9 +475,10 @@ def run(theta, epochs, fignum = 0, figdpi = 200, plot_features = 5, plot_last_ep
     _f.set_size_inches(16, 9)
     plt.savefig(features_figname,dpi=figdpi)
     plt.close(fig=_f)
-    print("\a\a")
-
     
+    if alert:
+        print("\a\a") # Ping user once run is complete
+  
 if __name__ == "__main__":
     np.random.seed(1)
     epochs = 25

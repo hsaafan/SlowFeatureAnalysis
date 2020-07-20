@@ -80,7 +80,6 @@ class Norm(Node):
         normalized_data = np.matmul(self.white_mat,centered_data) 
         return(normalized_data)
 
-
 class IncrementalNorm:
     mean = None
     var = None
@@ -216,3 +215,16 @@ class IncrementalNorm:
         # Update data count
         self.count += 1
         return(self.V)
+
+    def normalize_similar(self, signal):
+        '''
+        Centers and whitens input signal without updating the model
+        signal          -> Current signal
+        normalized_data -> Current signal after being transformed to approximate
+                           0 mean and identity matrix variance
+        '''
+        centered_data = signal - self.mean
+        S = self._get_whitening_matrix(self.V)
+        normalized_data = S.T @ centered_data
+
+        return(normalized_data)
