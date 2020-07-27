@@ -107,17 +107,17 @@ class Standardization(Node):
 
         return(whitened_data)
 
-    def standarize(self):
+    def standardize(self):
         """ Trains the model and returns the standardized data
 
         Returns
         -------
-        standarized_data: numpy.ndarray
+        standardized_data: numpy.ndarray
             Data with identity variance matrix and zero mean
         """
         centered_data = self._center(self.training_data)
-        standarized_data = self._whiten(centered_data)
-        return(standarized_data)
+        standardized_data = self._whiten(centered_data)
+        return(standardized_data)
 
     def center_similar(self, data):
         """ Center data using the learned offset
@@ -150,8 +150,8 @@ class Standardization(Node):
         whitened_data = self.whitening_matrix @ data
         return(whitened_data)
 
-    def standarize_similar(self, data):
-        """ Standarized data using learned model
+    def standardize_similar(self, data):
+        """ Standardized data using learned model
 
         Parameters
         ----------
@@ -160,13 +160,13 @@ class Standardization(Node):
 
         Returns
         -------
-        standarized_data: numpy.ndarray
+        standardized_data: numpy.ndarray
             Data that has been centered and whitened
         """
         self._check_input_data(data)
         centered_data = self.center_similar(data)
-        standarized_data = self.whiten_similar(centered_data)
-        return(standarized_data)
+        standardized_data = self.whiten_similar(centered_data)
+        return(standardized_data)
 
 
 class IncrementalStandardization(Node):
@@ -360,7 +360,7 @@ class IncrementalStandardization(Node):
         whitened_sample = self.whitening_matrix @ sample
         return(whitened_sample)
 
-    def standarize_online(self, sample, eta=0.01):
+    def standardize_online(self, sample, eta=0.01):
         """ Updates the model and returns the standardized sample
 
         Parameters
@@ -372,15 +372,15 @@ class IncrementalStandardization(Node):
 
         Returns
         -------
-        standarized_sample: numpy.ndarray
+        standardized_sample: numpy.ndarray
             Sample that has been centered and transformed by the current
             whitening matrix estimate
         """
         self._check_input_data(sample)
         centered_sample = self._center(sample, eta)
-        standarized_sample = self._whiten(sample, eta)
+        standardized_sample = self._whiten(sample, eta)
         self._count += 1
-        return(standarized_sample)
+        return(standardized_sample)
 
     def update_CCIPA(self, sample, eta):
         """ Updates and returns the model without transforming data
@@ -433,8 +433,8 @@ class IncrementalStandardization(Node):
         whitened_sample = self.whitening_matrix @ sample
         return(whitened_sample)
 
-    def standarize_similar(self, sample):
-        """ Standarized sample using learned model
+    def standardize_similar(self, sample):
+        """ standardized sample using learned model
 
         The model isn't updated when this method is used
 
@@ -445,13 +445,13 @@ class IncrementalStandardization(Node):
 
         Returns
         -------
-        standarized_sample: numpy.ndarray
+        standardized_sample: numpy.ndarray
             Sample that has been centered and whitened
         """
         self._check_input_data(sample)
         centered_sample = self.center_similar(sample)
-        standarized_sample = self.whiten_similar(centered_sample)
-        return(standarized_sample)
+        standardized_sample = self.whiten_similar(centered_sample)
+        return(standardized_sample)
 
 
 class RecursiveStandardization(Node):
@@ -541,10 +541,13 @@ class RecursiveStandardization(Node):
         eta: float
             The learning rate
         """
+        '''
         prev_cov = self.covariance
         recenter = self.offset_delta @ self.offset_delta.T
-        new_cov = (1 - eta) * (prev_cov + recenter) + eta * (sample @ sample.T)
+        new_cov = eta * (prev_cov + recenter) + (1 - eta) * (sample @ sample.T)
         self.covariance = new_cov
+        '''
+        self.covariance = (1 - eta) * self.covariance + eta * sample @ sample.T
         return
 
     def _whiten(self, sample, eta):
@@ -569,7 +572,7 @@ class RecursiveStandardization(Node):
         whitened_sample = self.whitening_matrix @ sample
         return(whitened_sample)
 
-    def standarize_online(self, sample, eta=0.01):
+    def standardize_online(self, sample, eta=0.01):
         """ Updates the model and returns the standardized sample
 
         Parameters
@@ -581,16 +584,16 @@ class RecursiveStandardization(Node):
 
         Returns
         -------
-        standarized_sample: numpy.ndarray
+        standardized_sample: numpy.ndarray
             Sample that has been centered and transformed by the current
             whitening matrix estimate
         """
         self._check_input_data(sample)
         centered_sample = self._center(sample, eta)
         self._update_sample_cov(centered_sample, eta)
-        standarized_sample = self._whiten(sample, eta)
+        standardized_sample = self._whiten(sample, eta)
         self._count += 1
-        return(standarized_sample)
+        return(standardized_sample)
 
     def center_similar(self, sample):
         """ Center sample using the learned offset
@@ -623,8 +626,8 @@ class RecursiveStandardization(Node):
         whitened_sample = self.whitening_matrix @ sample
         return(whitened_sample)
 
-    def standarize_similar(self, sample):
-        """ Standarized sample using learned model
+    def standardize_similar(self, sample):
+        """ standardized sample using learned model
 
         The model isn't updated when this method is used
 
@@ -635,10 +638,10 @@ class RecursiveStandardization(Node):
 
         Returns
         -------
-        standarized_sample: numpy.ndarray
+        standardized_sample: numpy.ndarray
             Sample that has been centered and whitened
         """
         self._check_input_data(sample)
         centered_sample = self.center_similar(sample)
-        standarized_sample = self.whiten_similar(centered_sample)
-        return(standarized_sample)
+        standardized_sample = self.whiten_similar(centered_sample)
+        return(standardized_sample)

@@ -84,7 +84,7 @@ class RSFA(IncrementalNode):
         expansion_order: int
             The order of nonlinear expansion to perform
         dynamic_copies: int
-            The number of lagged copies to add to the data 
+            The number of lagged copies to add to the data
         """
         super().__init__(input_variables, dynamic_copies, expansion_order)
         K = self.output_variables  # Number of variables after proccessing
@@ -111,6 +111,7 @@ class RSFA(IncrementalNode):
         history = eta * self.covariance_delta
         update = eta * (1 - eta) * (x_dot_prev @ x_dot.T)
         self.covariance_delta = history + update
+
         return(self.covariance_delta)
 
     def _update_transformation_matrix(self, x_dot, x_dot_prev, eta, Q):
@@ -127,17 +128,16 @@ class RSFA(IncrementalNode):
         Q: numpy.ndarray
             The current estimate of the whitening matrix
         """
-        max_iterations = 500
         cov_delta = self._update_delta_cov(x_dot, x_dot_prev, eta)
-
-        gam = 2 + 2*eta
+        '''
+        gam = 4
         P = self.transformation_matrix
         S = np.eye(self.output_variables) - (Q @ cov_delta @ Q.T) / gam
-        for i in range(max_iterations):
-            P_prev = np.copy(P)
-            P, R = LA.qr(S @ P_prev, mode='complete')
-            if LA.norm(P - P_prev) / LA.norm(P) < 0.001:
-                break
+        P, R = LA.qr(S @ P)
+        self.transformation_matrix = P
+        W = P @ Q
+        '''
+        P, L, PT = LA.svd(cov_delta, hermitian=True)
         self.transformation_matrix = P
         W = P @ Q
         return(W)
@@ -193,7 +193,7 @@ class RSFA(IncrementalNode):
 
         """ Update Learning rate """
         # TODO: Set learning rate schedule
-        eta = np.max([1 / (self.time + 2), 1e-6])
+        eta = np.max([1 / (self.time + 2), 1e-5])
 
         """ Signal centering and whitening """
         if self.time > 0:

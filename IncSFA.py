@@ -329,7 +329,7 @@ class IncSFA(IncrementalNode):
             # On first pass through, create the norm object
             node = IncrementalStandardization(x, self.num_components)
             self.standardization_node = node
-        z = self.standardization_node.standarize_online(x, eta_PCA)
+        z = self.standardization_node.standardize_online(x, eta_PCA)
         self.standardized_current = z
 
         """ Transformation """
@@ -408,7 +408,7 @@ class IncSFA(IncrementalNode):
 
         """ Signal centering and whitening """
         self.standardized_previous = np.copy(self.standardized_current)
-        z = self.standardization_node.standarize_similar(x)
+        z = self.standardization_node.standardize_similar(x)
         self.standardized_current = z
 
         """ Transformation """

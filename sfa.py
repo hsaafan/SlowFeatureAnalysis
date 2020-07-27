@@ -112,7 +112,7 @@ class SFA(Node):
     def _standardize_training(self):
         """ Updates the standardization model using the training data """
         self.standardization_node = Standardization(self.training_data)
-        self.standardized_data = self.standardization_node.standarize()
+        self.standardized_data = self.standardization_node.standardize()
         return
 
     def _transform_training(self):
@@ -177,7 +177,7 @@ class SFA(Node):
         if not self.trained:
             raise RuntimeError("Model has not been trained yet")
 
-        data = self.standardization_node.standarize_similar(self.training_data)
+        data = self.standardization_node.standardize_similar(self.training_data)
         # Find slowness of input signals
         xdot = np.diff(data)/self.delta
         mdot = xdot.shape[0]

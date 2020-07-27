@@ -127,15 +127,15 @@ def run_incsfa():
 def run_rsfa():
     plot_last_epoch = True
     plot_z = True
-    epochs = 10
+    epochs = 25
     X, T4, T5, T10 = imp.import_tep_sets()
     plotter = SFAPlotter(show=False, save=False, figure_text="")
 
     # RSFA parameters
     num_vars = X.shape[0]
     data_points = X.shape[1]
-    J = 33
-    d = 0    # Lagged copies
+    J = 99
+    d = 2    # Lagged copies
     n = 1    # Expansion order
 
     # Create RSFA object
@@ -164,13 +164,14 @@ def run_rsfa():
         Y = Y[:, -data_points:]
         stats = stats[:, -data_points:]
     eta = np.ones(J)
-    plotter.plot_features("IncSFA", Y, eta, num_features=5)
+    plotter.plot_features("IncSFA", Y, eta, num_features=8)
     if plot_z:
-        plotter.plot_features("Z", Z, eta, num_features=5)
+        plotter.plot_standardized("Z", Z)
     plt.show()
 
 
 if __name__ == "__main__":
+    np.random.seed(1)
     while True:
         choice = input("Pick an algorithm"
                        "\n[1] SFA"

@@ -78,3 +78,21 @@ class SFAPlotter:
             plt.savefig(fig_name, dpi=350)
             plt.close(fig=_s)
         return
+
+    def plot_standardized(self, fig_name, Z):
+        # Plots first 30 variables of Z
+        for i in range(3):
+            _z = plt.figure(fig_name)
+            plt.figtext(0.05, 0.02, self.figure_text)
+            for j in range(10):
+                plt.subplot(5, 2, j+1)
+                plt.xlabel("Sample")
+                plt.plot(Z[10*i + j, :])
+            _z.set_size_inches(16, 9)
+            if self.show:
+                plt.show()
+            if self.save:
+                plt.savefig(fig_name + str(i), dpi=350)
+                plt.close(fig=_z)
+                _z = None
+        return
