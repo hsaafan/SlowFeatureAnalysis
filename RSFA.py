@@ -95,9 +95,8 @@ class RSFA(IncrementalNode):
         self.transformation_matrix = np.random.randn(K, J)
         self.centered_delta_current = np.zeros((K, 1))
         self.centered_delta_previous = np.zeros((K, 1))
-        self.speeds = np.random.random_sample(J)
 
-    def _update_delta_cov(self, x_dot, x_dot_prev, eta):
+    def _update_delta_cov(self, x_dot, eta):
         """ Updates the covariance matrix for the derivative
 
         Parameters
@@ -115,7 +114,7 @@ class RSFA(IncrementalNode):
 
         return(self.covariance_delta)
 
-    def _update_transformation_matrix(self, x_dot, x_dot_prev, eta, Q):
+    def _update_transformation_matrix(self, x_dot, eta, Q):
         """ Updates the estimate of the transformation matrix
 
         Parameters
@@ -129,8 +128,9 @@ class RSFA(IncrementalNode):
         Q: numpy.ndarray
             The current estimate of the whitening matrix
         """
-        cov_delta = self._update_delta_cov(x_dot, x_dot_prev, eta)
-        gam = 10
+        cov_delta = self._update_delta_cov(x_dot, eta)
+        '''
+        gam = 4
         P = self.transformation_matrix
         S = np.eye(self.output_variables) - (Q @ cov_delta @ Q.T) / gam
         P, R = LA.qr(S @ P)
@@ -140,10 +140,8 @@ class RSFA(IncrementalNode):
         # Transformtion using SVD
         # Working, don't change...
         PT, L, P = LA.svd(Q @ cov_delta @ Q.T, hermitian=True)
-        self.speeds = (1 - eta) * self.speeds + eta * L
         self.transformation_matrix = P
         W = P @ Q
-        '''
         return(W)
 
     def update_control_limits(self, sample, sample_delta, alpha):
@@ -227,12 +225,11 @@ class RSFA(IncrementalNode):
             self.centered_delta_previous = x_dot_prev
 
             # Transform data
-            W = self._update_transformation_matrix(x_dot, x_dot_prev, eta, Q)
+            W = self._update_transformation_matrix(x_dot, eta, Q)
             y = W @ x
 
             # Update stored features
             self.feature_previous = np.copy(self.feature_current)
-            self.speeds = (1 - eta) * self.speeds + np.diag(y @ y.T)
             y_prev = self.feature_previous
             self.feature_current = y
 
