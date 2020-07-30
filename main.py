@@ -126,8 +126,8 @@ def run_incsfa():
 
 def run_rsfa():
     plot_last_epoch = True
-    plot_z = True
-    epochs = 25
+    plot_z = False
+    epochs = 5
     X, T4, T5, T10 = imp.import_tep_sets()
     plotter = SFAPlotter(show=False, save=False, figure_text="")
 
@@ -159,12 +159,16 @@ def run_rsfa():
             if plot_z and SlowFeature.centered_current is not None:
                 Z[:, pos] = SlowFeature.z.flat
 
+    speeds = SlowFeature.speeds
+    order = speeds.argsort()
+    speeds = speeds[order]
+    Y = Y[order, :]
     if plot_last_epoch:
         Z = Z[:, -data_points:]
         Y = Y[:, -data_points:]
         stats = stats[:, -data_points:]
-    eta = np.ones(J)
-    plotter.plot_features("IncSFA", Y, eta, num_features=8)
+    eta = np.around((Y.shape[1]/(2*np.pi)) * np.sqrt(speeds), 2)
+    plotter.plot_features("IncSFA", Y, eta, num_features=5)
     if plot_z:
         plotter.plot_standardized("Z", Z)
     plt.show()

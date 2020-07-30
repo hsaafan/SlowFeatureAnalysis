@@ -95,6 +95,7 @@ class RSFA(IncrementalNode):
         self.transformation_matrix = np.random.randn(K, J)
         self.centered_delta_current = np.zeros((K, 1))
         self.centered_delta_previous = np.zeros((K, 1))
+        self.speeds = np.random.random_sample(J)
 
     def _update_delta_cov(self, x_dot, x_dot_prev, eta):
         """ Updates the covariance matrix for the derivative
@@ -108,8 +109,8 @@ class RSFA(IncrementalNode):
         eta: float
             The learning rate
         """
-        history = eta * self.covariance_delta
-        update = eta * (1 - eta) * (x_dot_prev @ x_dot.T)
+        history = (1 - eta) * self.covariance_delta
+        update = eta * (x_dot @ x_dot.T)
         self.covariance_delta = history + update
 
         return(self.covariance_delta)
@@ -129,17 +130,20 @@ class RSFA(IncrementalNode):
             The current estimate of the whitening matrix
         """
         cov_delta = self._update_delta_cov(x_dot, x_dot_prev, eta)
-        '''
-        gam = 4
+        gam = 10
         P = self.transformation_matrix
         S = np.eye(self.output_variables) - (Q @ cov_delta @ Q.T) / gam
         P, R = LA.qr(S @ P)
         self.transformation_matrix = P
         W = P @ Q
         '''
-        P, L, PT = LA.svd(cov_delta, hermitian=True)
+        # Transformtion using SVD
+        # Working, don't change...
+        PT, L, P = LA.svd(Q @ cov_delta @ Q.T, hermitian=True)
+        self.speeds = (1 - eta) * self.speeds + eta * L
         self.transformation_matrix = P
         W = P @ Q
+        '''
         return(W)
 
     def update_control_limits(self, sample, sample_delta, alpha):
@@ -193,7 +197,7 @@ class RSFA(IncrementalNode):
 
         """ Update Learning rate """
         # TODO: Set learning rate schedule
-        eta = np.max([1 / (self.time + 2), 1e-5])
+        eta = np.max([1 / (self.time + 2), 1e-4])
 
         """ Signal centering and whitening """
         if self.time > 0:
@@ -228,6 +232,7 @@ class RSFA(IncrementalNode):
 
             # Update stored features
             self.feature_previous = np.copy(self.feature_current)
+            self.speeds = (1 - eta) * self.speeds + np.diag(y @ y.T)
             y_prev = self.feature_previous
             self.feature_current = y
 
