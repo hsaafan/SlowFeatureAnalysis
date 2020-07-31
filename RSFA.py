@@ -55,6 +55,9 @@ class RSFA(IncrementalNode):
         The current feature output
     transformation_matrix: numpy.ndarray
         The matrix that transforms whitened data into the features.
+    theta_vals: array
+        An arracy containing the 3 theta values used for calculating
+        the Q statistic.
     """
     time = 0
     delta = 1
@@ -68,6 +71,7 @@ class RSFA(IncrementalNode):
     centered_delta_previous = None
     feature_previous = None
     feature_current = None
+    theta_vals = [None, None, None]
 
     def __init__(self, input_variables, num_features,
                  expansion_order=None, dynamic_copies=None):
@@ -114,32 +118,29 @@ class RSFA(IncrementalNode):
 
         return(self.covariance_delta)
 
-    def _update_transformation_matrix(self, x_dot, eta, Q):
+    def _update_transformation_matrix(self, x_dot, eta, Q, svd=False):
         """ Updates the estimate of the transformation matrix
 
         Parameters
         ----------
         x_dot: numpy.ndarray
             The current centered sample derivative
-        x_dot_prev: numpy.ndarray
-            The previous centered sample derivative
         eta: float
             The learning rate
         Q: numpy.ndarray
             The current estimate of the whitening matrix
+        svd: boolean
+            Use direct SVD rather than QR Orthogonal Iteration Method
         """
         cov_delta = self._update_delta_cov(x_dot, eta)
-        '''
-        gam = 4
-        P = self.transformation_matrix
-        S = np.eye(self.output_variables) - (Q @ cov_delta @ Q.T) / gam
-        P, R = LA.qr(S @ P)
-        self.transformation_matrix = P
-        W = P @ Q
-        '''
-        # Transformtion using SVD
-        # Working, don't change...
-        PT, L, P = LA.svd(Q @ cov_delta @ Q.T, hermitian=True)
+        if svd:
+            PT, L, P = LA.svd(Q @ cov_delta @ Q.T, hermitian=True)
+        else:
+            gam = 4
+            P = self.transformation_matrix
+            S = np.eye(self.output_variables) - (Q @ cov_delta @ Q.T) / gam
+            PT, R = LA.qr(S @ P.T)
+            P = PT.T
         self.transformation_matrix = P
         W = P @ Q
         return(W)
@@ -147,12 +148,13 @@ class RSFA(IncrementalNode):
     def update_control_limits(self, sample, sample_delta, alpha):
         # FIXME: Depreceated, need to implement new version
         # Calculate limits
+        t1, t2, t3 = self.theta_vals
+        Pd = self.transformation_matrix[:, :self.Md]
+        Pe = self.transformation_matrix[:, self.Md:]
         x = sample
         x_dot = sample_delta
         c = stats.norm.cdf(alpha)
-        t1 = self.th_1
-        t2 = self.th_2
-        t3 = self.th_3
+
         h = 1 - (2*t1*t3)/(3*(t2**2))
         Q = t1*(1 + (c*(2*t2*(h**2))**(1/2)/t1) + t2*h*(h-1)/(t1**2)) ** (1/h)
 

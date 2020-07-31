@@ -127,9 +127,8 @@ def run_incsfa():
 def run_rsfa():
     plot_last_epoch = True
     plot_z = False
-    epochs = 25
+    epochs = 20
     X, T4, T5, T10 = imp.import_tep_sets()
-    plotter = SFAPlotter(show=False, save=False, figure_text="")
 
     # RSFA parameters
     num_vars = X.shape[0]
@@ -138,6 +137,9 @@ def run_rsfa():
     d = 2    # Lagged copies
     n = 1    # Expansion order
 
+    figure_text = (f"Epochs: {epochs} | $J=$ {J} | "
+                   f"Lagged Copies= {d} | Expansion Order= {n}")
+    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
     # Create RSFA object
     SlowFeature = RSFA(num_vars, J, n, d)
     SlowFeature.delta = 3
@@ -171,7 +173,7 @@ def run_rsfa():
     speeds = speeds[order]
     Y = Y[order, :]
     eta = np.around((Y.shape[1]/(2*np.pi)) * np.sqrt(speeds), 2)
-    plotter.plot_features("IncSFA", Y, eta, num_features=5)
+    plotter.plot_features("RSFA", Y, eta, num_features=5)
     if plot_z:
         plotter.plot_standardized("Z", Z)
     plt.show()

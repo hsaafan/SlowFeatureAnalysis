@@ -31,21 +31,37 @@ class SFAPlotter:
         speed_middle = eta[mid:mid+num_features]
         speed_fastest = eta[-num_features:]
 
+        y_range = (-3, 3)
         for i in range(num_features):
+            # Subscripts for eta
+            e1 = i + 1
+            e2 = mid + i + 1
+            e3 = len(eta) - num_features + i + 1
+            # Plot labels
+            lab1 = "$\eta_{" + f"{e1}" + "}$: " + f"{speed_slowest[i]}"
+            lab2 = "$\eta_{" + f"{e2}" + "}$: " + f"{speed_middle[i]}"
+            lab3 = "$\eta_{" + f"{e3}" + "}$: " + f"{speed_fastest[i]}"
+
+            # Plot slowest
             plt.subplot(num_features, 3, 3*i+1)
-            plt.plot(slowest[i, :], label=f"$\eta$: {speed_slowest[i]}")
+            plt.plot(slowest[i, :], label=lab1)
+            plt.ylim(y_range)
             plt.legend(loc="lower left")
             if i == 0:
                 plt.title("Slowest")
 
+            # Plot middle
             plt.subplot(num_features, 3, 3*i+2)
-            plt.plot(middle[i, :], label=f"$\eta$: {speed_middle[i]}")
+            plt.plot(middle[i, :], label=lab2)
+            plt.ylim(y_range)
             plt.legend(loc="lower left")
             if i == 0:
                 plt.title("Middle")
 
+            # Plot fastest
             plt.subplot(num_features, 3, 3*i+3)
-            plt.plot(fastest[i, :], label=f"$\eta$: {speed_fastest[i]}")
+            plt.plot(fastest[i, :], label=lab3)
+            plt.ylim(y_range)
             plt.legend(loc="lower left")
             if i == 0:
                 plt.title("Fastest")
