@@ -1,4 +1,5 @@
 """ Runs all the SFA algorithms """
+import copy
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ from incsfa import IncSFA
 from rsfa import RSFA
 
 
+# TODO: Document all these functions and clean them up
 def run_sfa():
     # Import TEP
     X, T4, T5, T10 = imp.import_tep_sets()
@@ -97,6 +99,7 @@ def run_incsfa():
             # Store data
             Y[:, pos] = run[0].reshape((J))
             stats[:, pos] = run[1]
+        X = np.flip(X, axis=1)
 
     if plot_last_epoch:
         Y = Y[:, -data_points:]
@@ -126,9 +129,10 @@ def run_incsfa():
 
 def run_rsfa():
     plot_last_epoch = True
-    plot_z = False
-    epochs = 20
+    epochs = 10
     X, T4, T5, T10 = imp.import_tep_sets()
+    T0 = list(imp.import_test_sets([0]))[0][1].T
+    T0 = np.delete(T0, list(range(22, 41)), axis=0)
 
     # RSFA parameters
     num_vars = X.shape[0]
@@ -147,9 +151,8 @@ def run_rsfa():
     # Create empty arrays to store output
     total_data_points = data_points * epochs
     Y = np.zeros((J, total_data_points))
-    Z = np.zeros_like(Y)
-    stats = np.zeros((3, total_data_points))
-    stats_crit = np.zeros((3, total_data_points))
+    stats = np.zeros((4, total_data_points))
+    stats_crit = np.zeros((4, total_data_points))
 
     for j in range(epochs):
         print("Running epoch " + str(j+1) + "/" + str(epochs))
@@ -158,14 +161,14 @@ def run_rsfa():
             run = SlowFeature.add_data(X[:, i])
             # Store data
             Y[:, pos] = run[0].reshape((J))
-            stats[:, pos] = run[1]
-            if plot_z and SlowFeature.centered_current is not None:
-                Z[:, pos] = SlowFeature.z.flat
+            stats[:, pos] = run[1] + [0]
+            stats_crit[:, pos] = run[2] + [0]
 
     if plot_last_epoch:
-        Z = Z[:, -data_points:]
         Y = Y[:, -data_points:]
         stats = stats[:, -data_points:]
+        stats_crit = stats_crit[:, -data_points:]
+    # TODO: Order features within class
     y_dot = np.diff(Y) / SlowFeature.delta
     speeds = (y_dot @ y_dot.T) / (Y.shape[1] - 1)
     speeds = np.diag(speeds)
@@ -174,8 +177,25 @@ def run_rsfa():
     Y = Y[order, :]
     eta = np.around((Y.shape[1]/(2*np.pi)) * np.sqrt(speeds), 2)
     plotter.plot_features("RSFA", Y, eta, num_features=5)
-    if plot_z:
-        plotter.plot_standardized("Z", Z)
+    plotter.plot_monitors("RSFA Stats", stats, stats_crit)
+    # Plot monitors for test data
+    # TODO: Add evaluation mode to data
+    test_data = [("IDV(0)", T0), ("IDV(4)", T4),
+                 ("IDV(5)", T5), ("IDV(10)", T10)]
+    num_tests = len(test_data)
+    for name, test in test_data:
+        test_obj = copy.deepcopy(SlowFeature)
+        print("Evaluating test: " + name)
+        data_points = test.shape[1]
+        stats = np.zeros((4, data_points))
+        stats_crit = np.zeros((4, data_points))
+
+        for i in range(data_points):
+            run = test_obj.add_data(test[:, i])
+            # Store data
+            stats[:, i] = run[1] + [0]
+            stats_crit[:, i] = run[2] + [0]
+        plotter.plot_monitors(name, stats, stats_crit)
     plt.show()
 
 

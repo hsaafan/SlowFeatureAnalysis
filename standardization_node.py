@@ -297,7 +297,7 @@ class IncrementalStandardization(Node):
 
                 # Get new estimate of v
                 historical = (1 - eta) * prev_v
-                update = eta * u * u.T @ prev_v / LA.norm(prev_v)
+                update = eta * prev_v / LA.norm(prev_v) * u.T @ u
                 new_v = historical + update
 
                 # Store new estimate
