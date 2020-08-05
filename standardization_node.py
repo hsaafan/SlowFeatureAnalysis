@@ -500,7 +500,8 @@ class RecursiveStandardization(Node):
         self.offset = np.zeros_like(first_sample)
         self.offset_delta = np.zeros_like(first_sample)
         d = first_sample.shape[0]
-        self.covariance = np.random.randn(d, d)
+        # Static start covariance
+        self.covariance = np.ones((d, d))
         self._count = 1
 
     def _center(self, sample, eta):
@@ -568,7 +569,7 @@ class RecursiveStandardization(Node):
         """
         # TODO: Replace SVD with rank one modification as in paper
         U, L, UT = LA.svd(self.covariance)
-        self.whitening_matrix = np.diag(L ** (-1/2)) @ UT
+        self.whitening_matrix = U @ np.diag(L ** (-1/2))
         whitened_sample = self.whitening_matrix @ sample
         return(whitened_sample)
 

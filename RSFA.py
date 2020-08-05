@@ -76,7 +76,7 @@ class RSFA(IncrementalNode):
     feature_previous = None
     feature_current = None
     consecutive_faults = 0
-    required_faults = 10
+    required_faults = 25
 
     def __init__(self, input_variables, num_features,
                  expansion_order=None, dynamic_copies=None):
@@ -97,10 +97,12 @@ class RSFA(IncrementalNode):
         K = self.output_variables  # Number of variables after proccessing
         J = num_features
 
-        self.Md = 55  # TODO: Replace this
-        self.Me = J - self.Md
         self.num_features = J
-        self.covariance_delta = np.random.randn(K, K)
+        # Static start covariance
+        # self.covariance_delta = np.ones((K, K))
+        # Random start covariance matrix
+        random_data = np.random.randn(K, 500)
+        self.covariance_delta = np.cov(random_data)
         self.transformation_matrix = np.random.randn(K, J)
         self.centered_delta_current = np.zeros((K, 1))
         self.centered_delta_previous = np.zeros((K, 1))
@@ -150,18 +152,17 @@ class RSFA(IncrementalNode):
         """
         cov_delta = self._update_delta_cov(x_dot, eta)
         if svd:
-            PT, L, P = LA.svd(Q @ cov_delta @ Q.T, hermitian=True)
+            P, L, PT = LA.svd(Q.T @ cov_delta @ Q, hermitian=True)
         else:
             gam = 4
             P = self.transformation_matrix
-            S = np.eye(self.output_variables) - (Q @ cov_delta @ Q.T) / gam
-            PT, R = LA.qr(S @ P.T)
-            P = PT.T
+            S = np.eye(self.output_variables) - (Q.T @ cov_delta @ Q) / gam
+            P, R = LA.qr(S @ P)
         self._check_convergence(self.transformation_matrix, P)
         self.transformation_matrix = P
         return(P)
 
-    def _check_convergence(self, P_prev, P, eta=0.05):
+    def _check_convergence(self, P_prev, P, eta=0.01, ignore_resid=True):
         """ Checks model convergence based on change in P
 
         Parameters
@@ -173,8 +174,9 @@ class RSFA(IncrementalNode):
         eta: float
             The largest relative change indicating convergence
         """
-        P = P[:, :self.Md]
-        P_prev = P_prev[:, :self.Md]
+        if ignore_resid:
+            P = P[:, :self.Md]
+            P_prev = P_prev[:, :self.Md]
         change = LA.norm(P - P_prev, ord='fro') / LA.norm(P, ord='fro')
         if change < eta:
             self.evaluation = True
@@ -205,48 +207,78 @@ class RSFA(IncrementalNode):
         stats: array
             An array containing the monitoring statistics in the following
             order: T^2 (for slowest features), T^2 (for fastest features),
-            S^2 (for slowest features)
+            S^2 (for slowest features), S^2 (for fastest features)
         stats_crit: array
             An array containing the critical statistics in the same order as
             stats.
         """
-        # Calculate theta values
-        t1 = 0
-        t2 = 0
-        t3 = 0
-        Om = np.zeros(self.Md)
-        for i in range(self.Md):
-            p = P[:, i].reshape(self.num_features, 1)
-            w = p.T @ Q @ cov_delta @ Q.T @ p
-            # TODO: Check if its to the power of j or something else?
-            t1 += w
-            t2 += w ** 2
-            t3 += w ** 3
-            Om[i] = w
-        c = ST.norm.cdf(alpha)
+        # Calculate eigenvalues of transformation matrix
+        Omega = P.T @ Q.T @ cov_delta @ Q @ P
 
-        # Calculate critical Q statistic
-        h = 1 - (2 * t1 * t3) / (3 * t2 * t2)
-        q1 = c * (2 * t2 * h * h) ** (1/2)
-        q2 = t2 * h * (h - 1) / (t1 * t1)
-        Q = t1 * (q1 + q2 + 1) ** (1 / h)
+        # Order slow features in order of increasing speed
+        Omega = np.diag(Omega)
+        order = Omega.argsort()
+        Omega = Omega[order]
+        features = features[order]
+        features_delta = features_delta[order]
+
         # Calculate critical T stats
-        T_d_crit = ST.chi2.ppf(1 - alpha, self.Md)
-        T_e_crit = ST.chi2.ppf(1 - alpha, self.Me)
+        Md = self.Md
+        Me = self.num_features - self.Md
+
+        T_d_crit = ST.chi2.ppf(1 - alpha, Md)
+        T_e_crit = ST.chi2.ppf(1 - alpha, Me)
+        Q_d_crit = self.calculate_Q_stat(Omega[:Md], alpha)
+        Q_e_crit = 0  # self.calculate_Q_stat(Omega[Md:], 1- alpha)
 
         # Calculate test stats
-        features_slow = features[:self.Md].reshape(self.Md, 1)
-        features_fast = features[self.Md:].reshape(self.Me, 1)
+        features_slow = features[:Md].reshape(Md, 1)
+        features_fast = features[Md:].reshape(Me, 1)
         T_d = features_slow.T @ features_slow
         T_e = features_fast.T @ features_fast
-        features_slow_delta = features_delta[:self.Md].reshape(self.Md, 1)
-        S_d = features_slow_delta.T @ np.diag(Om ** -1) @ features_slow_delta
 
-        stats = [T_d, T_e, S_d]
-        stats_crit = [T_d_crit, T_e_crit, Q]
+        features_slow_delta = features_delta[:Md].reshape(Md, 1)
+        features_fast_delta = features_delta[Md:].reshape(Me, 1)
+
+        S_d = features_slow_delta.T @ features_slow_delta
+        S_e = features_fast_delta.T @ features_fast_delta
+
+        stats = [T_d, T_e, S_d, S_e]
+        stats_crit = [T_d_crit, T_e_crit, Q_d_crit, Q_e_crit]
         return(stats, stats_crit)
 
-    def add_data(self, raw_sample, alpha=0.05):
+    def calculate_Q_stat(self, eigenvalues, alpha, use_chi2=False):
+        """ Calculate the critical Q statistic
+
+        Parameters
+        ----------
+        eigenvalues: numpy.ndarray
+            A 1-D array containing the eigenvalues used for the calculation
+        alpha: float
+            The significance level to use
+        use_chi2: boolean
+            Whether to use the alternative scaled chi2 statistic instead
+        """
+        # Calculate theta values
+        t1 = np.sum(eigenvalues)
+        t2 = np.sum(eigenvalues ** 2)
+        t3 = np.sum(eigenvalues ** 3)
+
+        if use_chi2:
+            # Alternative Q using chi squared
+            g = t2 / t1
+            h = t1 * t1 / t2
+            Q = g * ST.chi2.ppf(1 - alpha, h)
+        else:
+            # Calculate Q stat
+            c = ST.norm.ppf(1 - alpha)
+            h = 1 - (2 * t1 * t3) / (3 * t2 * t2)
+            q1 = (c * (2 * t2 * h * h) ** (1/2)) / t1
+            q2 = t2 * h * (h - 1) / (t1 * t1)
+            Q = t1 * (q1 + q2 + 1) ** (1 / h)
+        return(Q)
+
+    def add_data(self, raw_sample, alpha=0.01):
         """Update the RSFA model with new data points
 
         Parameters
@@ -261,15 +293,15 @@ class RSFA(IncrementalNode):
         stats: array
             An array containing the monitoring statistics in the following
             order: T^2 (for slowest features), T^2 (for fastest features),
-            S^2 (for slowest features).
+            S^2 (for slowest features), and S^2 (for fastest features).
         """
         if self.evaluation:
             y, stats, stats_crit = self._evaluate(raw_sample, alpha)
             return(y, stats, stats_crit)
         # Default values
         y = np.zeros((self.num_features, 1))
-        stats = [0, 0, 0]
-        stats_crit = [0, 0, 0]
+        stats = [0, 0, 0, 0]
+        stats_crit = [0, 0, 0, 0]
 
         """ Signal preprocessing """
         raw_sample = raw_sample.reshape((raw_sample.shape[0], 1))
@@ -310,7 +342,8 @@ class RSFA(IncrementalNode):
 
             # Transform data
             P = self._update_transformation_matrix(x_dot, eta, Q)
-            y = P @ Q @ x
+            W = Q @ P
+            y = W.T @ x
 
             # Update stored features
             self.feature_previous = np.copy(self.feature_current)
@@ -329,7 +362,7 @@ class RSFA(IncrementalNode):
 
         return(y, stats, stats_crit)
 
-    def _evaluate(self, raw_sample, alpha=0.05):
+    def _evaluate(self, raw_sample, alpha):
         """Calculate the features and monitors without updating the model
 
         Parameters
@@ -344,7 +377,7 @@ class RSFA(IncrementalNode):
         stats: array
             An array containing the monitoring statistics in the following
             order: T^2 (for slowest features), T^2 (for fastest features),
-            S^2 (for slowest features).
+            S^2 (for slowest features), and S^2 (for fastest features)
         """
         """ Signal preprocessing """
         raw_sample = raw_sample.reshape((raw_sample.shape[0], 1))
@@ -354,7 +387,8 @@ class RSFA(IncrementalNode):
         """ Transformation """
         Q = self.standardization_node.whitening_matrix
         P = self.transformation_matrix
-        y = P @ Q @ x
+        W = Q @ P
+        y = W.T @ x
 
         """ Update history """
         self.feature_previous = np.copy(self.feature_current)
@@ -376,11 +410,12 @@ class RSFA(IncrementalNode):
 
     def _check_faults(self, stats, stats_crit,
                       current_faults, required_faults):
-        T_d, T_e, S_d = stats
-        T_d_crit, T_e_crit, S_d_crit = stats_crit
+        T_d, T_e, S_d, S_e = stats
+        T_d_crit, T_e_crit, S_d_crit, S_d_crit = stats_crit
         if T_d > T_d_crit or T_e > T_e_crit:
-            if False:  # S_d > S_d_crit:
-                print(f"Fault detected at time {self.time}, model updating")
+            if S_d > S_d_crit:
+                print("Operating condition deviation detected at time "
+                      f"{self.time}, model updating")
                 self.evaluation = False
             else:
                 current_faults += 1

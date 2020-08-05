@@ -14,7 +14,7 @@ from rsfa import RSFA
 # TODO: Document all these functions and clean them up
 def run_sfa():
     # Import TEP
-    X, T4, T5, T10 = imp.import_tep_sets()
+    X, T0, T4, T5, T10 = imp.import_tep_sets()
     plotter = SFAPlotter(show=False, save=False, figure_text="")
     d = 2    # Lagged copies
     q = 0.1  # Partition fraction
@@ -55,9 +55,8 @@ def run_sfa():
 def run_incsfa():
     plot_last_epoch = True
     # Import data
-    X, T4, T5, T10 = imp.import_tep_sets()
-    T0 = list(imp.import_test_sets([0]))[0][1].T
-    T0 = np.delete(T0, list(range(22, 41)), axis=0)
+    X, T0, T4, T5, T10 = imp.import_tep_sets()
+
     # IncSFA parameters
     num_vars = X.shape[0]
     data_points = X.shape[1]
@@ -129,10 +128,8 @@ def run_incsfa():
 
 def run_rsfa():
     plot_last_epoch = True
-    epochs = 10
-    X, T4, T5, T10 = imp.import_tep_sets()
-    T0 = list(imp.import_test_sets([0]))[0][1].T
-    T0 = np.delete(T0, list(range(22, 41)), axis=0)
+    epochs = 5
+    X, T0, T4, T5, T10 = imp.import_tep_sets()
 
     # RSFA parameters
     num_vars = X.shape[0]
@@ -147,6 +144,7 @@ def run_rsfa():
     # Create RSFA object
     SlowFeature = RSFA(num_vars, J, n, d)
     SlowFeature.delta = 3
+    SlowFeature.Md = 55
 
     # Create empty arrays to store output
     total_data_points = data_points * epochs
@@ -161,8 +159,8 @@ def run_rsfa():
             run = SlowFeature.add_data(X[:, i])
             # Store data
             Y[:, pos] = run[0].reshape((J))
-            stats[:, pos] = run[1] + [0]
-            stats_crit[:, pos] = run[2] + [0]
+            stats[:, pos] = run[1]
+            stats_crit[:, pos] = run[2]
 
     if plot_last_epoch:
         Y = Y[:, -data_points:]
@@ -193,8 +191,8 @@ def run_rsfa():
         for i in range(data_points):
             run = test_obj.add_data(test[:, i])
             # Store data
-            stats[:, i] = run[1] + [0]
-            stats_crit[:, i] = run[2] + [0]
+            stats[:, i] = run[1]
+            stats_crit[:, i] = run[2]
         plotter.plot_monitors(name, stats, stats_crit)
     plt.show()
 

@@ -177,9 +177,9 @@ class SFA(Node):
         if not self.trained:
             raise RuntimeError("Model has not been trained yet")
 
-        data = self.standardization_node.standardize_similar(self.training_data)
+        x = self.standardization_node.standardize_similar(self.training_data)
         # Find slowness of input signals
-        xdot = np.diff(data)/self.delta
+        xdot = np.diff(x)/self.delta
         mdot = xdot.shape[0]
         Ndot = xdot.shape[1]
         signal_speed = np.zeros(mdot)

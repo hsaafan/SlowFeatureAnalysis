@@ -70,19 +70,21 @@ def import_tep_sets():
     IDV(4), IDV(5), and IDV(10)
     """
     training_sets = list(import_training_sets([0]))
-    testing_sets = list(import_test_sets([4, 5, 10]))
+    testing_sets = list(import_test_sets([0, 4, 5, 10]))
 
     X = training_sets[0][1]
-    T4 = testing_sets[0][1].T
-    T5 = testing_sets[1][1].T
-    T10 = testing_sets[2][1].T
+    T0 = testing_sets[0][1].T
+    T4 = testing_sets[1][1].T
+    T5 = testing_sets[2][1].T
+    T10 = testing_sets[3][1].T
 
     ignored_var = list(range(22, 41))
     X = np.delete(X, ignored_var, axis=0)
+    T0 = np.delete(T0, ignored_var, axis=0)
     T4 = np.delete(T4, ignored_var, axis=0)
     T5 = np.delete(T5, ignored_var, axis=0)
     T10 = np.delete(T10, ignored_var, axis=0)
-    return(X, T4, T5, T10)
+    return(X, T0, T4, T5, T10)
 
 
 if __name__ == "__main__":
