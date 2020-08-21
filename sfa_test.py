@@ -6,7 +6,6 @@ import numpy as np
 import tep_import as imp
 from sfa import SFA
 
-# TODO: Is there a set precision that should be used?
 _prec = 6  # Consider any number less than 10^(-_prec) to be 0
 _max_features = 250
 

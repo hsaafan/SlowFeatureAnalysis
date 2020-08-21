@@ -39,18 +39,12 @@ class RSFA(IncrementalNode):
         Whether the model is being updated or only evaluated
     covariance_delta: numpy.ndarray
         The estimated covariance matrix of the derivative of the samples
-    num_features: int
-        The amount of features to calculate.
     standardization_node: RecursiveStandardization
         Object used to standardize input samples
     centered_previous: numpy.ndarray
         The previous sample that has been centered
     centered_current: numpy.ndarray
         The current sample that has been centered
-    centered_delta_current: numpy.ndarray
-        The current centered sample derivative
-    centered_delta_previous: numpy.ndarray
-        The previous centered sample derivative
     feature_previous: numpy.ndarray
         The previous feature output
     feature_current: numpy.ndarray
@@ -66,28 +60,23 @@ class RSFA(IncrementalNode):
     delta = 1
     evaluation = False
     covariance_delta = None
-    num_features = None
     transformation_matrix = None
     standardization_node = None
     centered_previous = None
     centered_current = None
-    centered_delta_current = None
-    centered_delta_previous = None
     feature_previous = None
     feature_current = None
     consecutive_faults = 0
     required_faults = 25
 
-    def __init__(self, input_variables, num_features,
-                 expansion_order=None, dynamic_copies=None):
+    def __init__(self, input_variables, expansion_order=None,
+                 dynamic_copies=None):
         """ Class constructor
 
         Parameters
         ----------
         input_variables: int
             Number of variables to be input before any processing
-        num_features: int
-            Desired number of slow features to calculate
         expansion_order: int
             The order of nonlinear expansion to perform
         dynamic_copies: int
@@ -95,17 +84,16 @@ class RSFA(IncrementalNode):
         """
         super().__init__(input_variables, dynamic_copies, expansion_order)
         K = self.output_variables  # Number of variables after proccessing
-        J = num_features
 
-        self.num_features = J
-        # Static start covariance
-        # self.covariance_delta = np.ones((K, K))
-        # Random start covariance matrix
-        random_data = np.random.randn(K, 500)
-        self.covariance_delta = np.cov(random_data)
-        self.transformation_matrix = np.random.randn(K, J)
-        self.centered_delta_current = np.zeros((K, 1))
-        self.centered_delta_previous = np.zeros((K, 1))
+        self.covariance_delta = np.zeros((K, K))
+        self.transformation_matrix = np.zeros((K, K))
+
+        self.update_after_converge = False
+
+    def _learning_schedule(self):
+        """ Set the learning rate """
+        eta = np.max([1 / (self.time + 2), 1e-4])
+        return(eta)
 
     def _update_delta_cov(self, x_dot, eta):
         """ Updates the covariance matrix for the derivative
@@ -222,14 +210,24 @@ class RSFA(IncrementalNode):
         features = features[order]
         features_delta = features_delta[order]
 
+        """
+        threshold = np.quantile(x_dot_speeds, 0.9, interpolation='lower')
+        for ind, transform_ev in enumerate(Omega):
+            if transform_ev > threshold:
+                Md = ind
+                Me = self.output_variables - Md
+                self.Md = Md
+                self.Me = Me
+        """
+
         # Calculate critical T stats
         Md = self.Md
-        Me = self.num_features - self.Md
+        Me = self.output_variables - self.Md
 
         T_d_crit = ST.chi2.ppf(1 - alpha, Md)
         T_e_crit = ST.chi2.ppf(1 - alpha, Me)
         Q_d_crit = self.calculate_Q_stat(Omega[:Md], alpha)
-        Q_e_crit = 0  # self.calculate_Q_stat(Omega[Md:], 1- alpha)
+        Q_e_crit = self.calculate_Q_stat(Omega[Md:], alpha)
 
         # Calculate test stats
         features_slow = features[:Md].reshape(Md, 1)
@@ -247,7 +245,7 @@ class RSFA(IncrementalNode):
         stats_crit = [T_d_crit, T_e_crit, Q_d_crit, Q_e_crit]
         return(stats, stats_crit)
 
-    def calculate_Q_stat(self, eigenvalues, alpha, use_chi2=False):
+    def calculate_Q_stat(self, eigenvalues, alpha, use_chi2=True):
         """ Calculate the critical Q statistic
 
         Parameters
@@ -299,12 +297,12 @@ class RSFA(IncrementalNode):
             y, stats, stats_crit = self._evaluate(raw_sample, alpha)
             return(y, stats, stats_crit)
         # Default values
-        y = np.zeros((self.num_features, 1))
+        y = np.zeros((self.output_variables, 1))
         stats = [0, 0, 0, 0]
         stats_crit = [0, 0, 0, 0]
 
         """ Signal preprocessing """
-        raw_sample = raw_sample.reshape((raw_sample.shape[0], 1))
+        raw_sample = raw_sample.reshape((-1, 1))
         sample = self.process_sample(raw_sample)
         if np.allclose(sample, 0):
             # Need more data to get right number of dynamic copies
@@ -312,7 +310,7 @@ class RSFA(IncrementalNode):
 
         """ Update Learning rate """
         # TODO: Set learning rate schedule
-        eta = np.max([1 / (self.time + 2), 1e-4])
+        eta = self._learning_schedule()
 
         """ Signal centering and whitening """
         if self.time > 0:
@@ -335,10 +333,7 @@ class RSFA(IncrementalNode):
         """ Transformation """
         if self.time > 0:
             # Update derivatives
-            x_dot_prev = np.copy(self.centered_delta_previous)
             x_dot = (x - x_prev)/self.delta
-            self.centered_delta_current = x_dot
-            self.centered_delta_previous = x_dot_prev
 
             # Transform data
             P = self._update_transformation_matrix(x_dot, eta, Q)
@@ -402,9 +397,12 @@ class RSFA(IncrementalNode):
                                                        P, Q, alpha)
 
         """ Check for faults """
-        self.consecutive_faults = self._check_faults(stats, stats_crit,
-                                                     self.consecutive_faults,
-                                                     self.required_faults)
+        if self.update_after_converge:
+            c_f = self.consecutive_faults
+            r_f = self.required_faults
+            c_f = self._check_faults(stats, stats_crit, c_f, r_f)
+            self.consecutive_faults = c_f
+
         self.time += 1
         return(y, stats, stats_crit)
 

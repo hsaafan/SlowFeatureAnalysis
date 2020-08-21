@@ -5,3 +5,5 @@ __pychache__
 TE_process
 .vscode
 *.png
+mca.py
+pca.py

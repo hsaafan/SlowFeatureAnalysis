@@ -81,13 +81,13 @@ class SFA(Node):
     def slow_features(self):
         if not self.parted:
             raise RuntimeError("Signals have not been partitioned yet")
-        return(self.features[:self.Me, :])
+        return(self.features[:self.Md, :])
 
     @property
     def fast_features(self):
         if not self.parted:
             raise RuntimeError("Signals have not been partitioned yet")
-        return(self.features[self.Me:, :])
+        return(self.features[self.Md:, :])
 
     def __init__(self, data, dynamic_copies=None, expansion_order=None):
         """ Class constructor
@@ -198,7 +198,7 @@ class SFA(Node):
         self.calculate_crit_values()
         return
 
-    def partition_manual(self, Me):
+    def partition_manual(self, Md):
         """ Manually select where to make the cut from slow to fast features
 
         Parameters
@@ -208,8 +208,8 @@ class SFA(Node):
             less than Me is considered slow and the remainder are considered
             fast.
         """
-        self.Me = Me
-        self.Md = self.features_speed.size - Me
+        self.Md = Md
+        self.Me = self.features_speed.size - Md
         self.parted = True
         self.calculate_crit_values()
         return

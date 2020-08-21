@@ -81,7 +81,7 @@ class SFAPlotter:
         plt.figtext(0.05, 0.02, self.figure_text)
         titles = ["$T^2$", "$T_e^2$", "$S^2$", "$S_e^2$"]
         for i in range(4):
-            plt.subplot(2, 2, i+1)
+            plt.subplot(4, 1, i+1)
             plt.title(titles[i])
             plt.xlabel("Sample")
             plt.plot(stats[i])
