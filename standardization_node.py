@@ -33,6 +33,8 @@ import scipy
 
 from data_node import Node
 
+eps = np.finfo(float).eps
+
 
 class Standardization(Node):
     """ Batch data centering and whitening
@@ -184,15 +186,12 @@ class IncrementalStandardization(Node):
         The number of principal components to keep
     _count: int
         The number of samples that have been passed to the model so far
-    _eps: float
-        Epsilon value used to prevent numerical errors
     """
     offset = None
     whitening_matrix = None
     eigensystem = None
     num_components = None
     _count = None
-    _eps = 1e-8
 
     def __init__(self, first_sample, num_components):
         """ Class constructor
@@ -214,9 +213,8 @@ class IncrementalStandardization(Node):
 
         # Initialize eigensystem
         d = first_sample.shape[0]
-        self.eigensystem = np.random.randn(d, self.num_components)
-
-        self._count = 1
+        self.eigensystem = np.ones((d, self.num_components))
+        self._count = 0
 
     def _store_num_components(self, num_components):
         """ Stores the the number of principal components
@@ -253,11 +251,6 @@ class IncrementalStandardization(Node):
         """
         self.offset = (1 - eta) * self.offset + eta * sample
         centered_sample = sample - self.offset
-
-        if np.allclose(centered_sample, 0, atol=self._eps):
-            # Add some noise if u is all zeros to prevent div by 0 errors
-            noise = self._eps * np.random.randn(centered_sample.size, 1)
-            centered_sample += noise
         return(centered_sample)
 
     def _CCIPA(self, eigensystem, sample, eta):
@@ -272,6 +265,8 @@ class IncrementalStandardization(Node):
             an eigenvector multiplied by its respective eigenvalue
         sample: numpy.ndarray
             The sample used to update the eigensystem
+        eta: float
+            The learning rate
 
         Returns
         -------
@@ -286,26 +281,31 @@ class IncrementalStandardization(Node):
         Transactions on Pattern Analysis and Machine Intelligence, 25(8),
         1034–1040. <https://doi.org/10.1109/tpami.2003.1217609>
         """
-        max_iter = int(np.min([self.num_components, self._count]))
-        u = sample
+        max_iter = int(np.min([self.num_components, self._count + 1]))
+        u = sample.reshape((-1, 1))
+        u_orig = np.copy(u)
+        resid_sum = np.zeros_like(u)
         for i in range(max_iter):
-            if i == self._count - 1:
+            u = u_orig - resid_sum
+            if i == self._count:
                 eigensystem[:, i] = u.flat
             else:
                 # Get previous estimate of v
-                prev_v = eigensystem[:, i].reshape((eigensystem.shape[0], 1))
+                v_prev = eigensystem[:, i].reshape((-1, 1))
+                v_prev_norm = LA.norm(v_prev) + eps
 
                 # Get new estimate of v
-                historical = (1 - eta) * prev_v
-                update = eta * prev_v / LA.norm(prev_v) * u.T @ u
-                new_v = historical + update
+                historical = (1 - eta) * v_prev
+                projection = (u_orig.T @ v_prev) / v_prev_norm
+                update = eta * u * projection
+                v_new = historical + update
 
                 # Store new estimate
-                eigensystem[:, i] = new_v.flat
+                eigensystem[:, i] = v_new.flat
 
-                # Update u for next vector
-                new_v_normed = new_v / (LA.norm(new_v) + self._eps)
-                u = u - (u.T @  new_v_normed) * new_v_normed
+                # Update sum from projections
+                v_norm = LA.norm(v_new) + eps
+                resid_sum += ((u_orig.T @ v_new) * v_new)/(v_norm ** 2)
         return(eigensystem)
 
     def _get_whitening_matrix(self, eigensystem, zca_whitening=False):
@@ -327,7 +327,7 @@ class IncrementalStandardization(Node):
         U = np.zeros_like(eigensystem)
         # Calculate the eigenvectors and the diagonal matrix
         for i in range(self.num_components):
-            eigenvalue = LA.norm(eigensystem[:, i]) + self._eps
+            eigenvalue = LA.norm(eigensystem[:, i]) + eps
             U[:, i] = eigensystem[:, i] / eigenvalue
             D[i] = eigenvalue ** (-1/2)
 
@@ -355,6 +355,7 @@ class IncrementalStandardization(Node):
             Sample that has been transformed by the current whitening matrix
             estimate
         """
+        sample = sample.reshape((-1, 1))
         self.eigensystem = self._CCIPA(self.eigensystem, sample, eta)
         self.whitening_matrix = self._get_whitening_matrix(self.eigensystem)
         whitened_sample = self.whitening_matrix @ sample
@@ -378,7 +379,7 @@ class IncrementalStandardization(Node):
         """
         self._check_input_data(sample)
         centered_sample = self._center(sample, eta)
-        standardized_sample = self._whiten(sample, eta)
+        standardized_sample = self._whiten(centered_sample, eta)
         self._count += 1
         return(standardized_sample)
 
@@ -467,10 +468,6 @@ class RecursiveStandardization(Node):
         The estimated covariance matrix of the input data
     whitening_matrix: numpy.ndarray
         The whitening transformation matrix used to whiten zero-mean data
-    _count: int
-        The number of samples that have been passed to the model so far
-    _eps: float
-        Epsilon value used to prevent numerical errors
 
     References
     ----------
@@ -482,8 +479,6 @@ class RecursiveStandardization(Node):
     offset_delta = None
     covariance = None
     whitening_matrix = None
-    _count = None
-    _eps = 1e-8
 
     def __init__(self, first_sample):
         """ Class constructor
@@ -500,9 +495,7 @@ class RecursiveStandardization(Node):
         self.offset = np.zeros_like(first_sample)
         self.offset_delta = np.zeros_like(first_sample)
         d = first_sample.shape[0]
-        # Static start covariance
-        self.covariance = np.ones((d, d))
-        self._count = 1
+        self.covariance = np.zeros((d, d))
 
     def _center(self, sample, eta):
         """ Center a sample and update the offset and its derivative
@@ -524,12 +517,6 @@ class RecursiveStandardization(Node):
         self.offset_delta = self.offset - prev_offset
         centered_sample = sample - self.offset
 
-        """ TODO: Check if this is needed for RSFA or not
-        if np.allclose(centered_sample, 0, atol=self._eps):
-            # Add some noise if u is all zeros to prevent div by 0 errors
-            noise = self._eps * np.random.randn(centered_sample.size, 1)
-            centered_sample += noise
-        """
         return(centered_sample)
 
     def _update_sample_cov(self, sample, eta):
@@ -570,7 +557,8 @@ class RecursiveStandardization(Node):
         # TODO: Replace SVD with rank one modification as in paper
         U, L, UT = LA.svd(self.covariance)
         self.whitening_matrix = U @ np.diag(L ** (-1/2))
-        whitened_sample = self.whitening_matrix @ sample
+        self.whitening_eigenvals = L
+        whitened_sample = self.whitening_matrix.T @ sample
         return(whitened_sample)
 
     def standardize_online(self, sample, eta=0.01):
@@ -592,8 +580,7 @@ class RecursiveStandardization(Node):
         self._check_input_data(sample)
         centered_sample = self._center(sample, eta)
         self._update_sample_cov(centered_sample, eta)
-        standardized_sample = self._whiten(sample, eta)
-        self._count += 1
+        standardized_sample = self._whiten(centered_sample, eta)
         return(standardized_sample)
 
     def center_similar(self, sample):

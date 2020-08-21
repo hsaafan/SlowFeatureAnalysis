@@ -15,18 +15,18 @@ from rsfa import RSFA
 def run_sfa():
     # Import TEP
     X, T0, T4, T5, T10 = imp.import_tep_sets()
-    plotter = SFAPlotter(show=False, save=False, figure_text="")
+    plotter = SFAPlotter(show=False, save=True, figure_text="")
     d = 2    # Lagged copies
     q = 0.1  # Partition fraction
     n = 1    # Expansion order
-    Me = 55  # Slow features to keep
+    Md = 55  # Slow features to keep
 
     # Run SFA
     SlowFeature = SFA(X, d, n)
     SlowFeature.delta = 3
     Y = SlowFeature.train()
     SlowFeature.partition(q)
-    SlowFeature.partition_manual(Me)
+    SlowFeature.partition_manual(Md)
     eta = np.around((X.shape[1]/(2*np.pi)) *
                     np.sqrt(SlowFeature.features_speed), 2)
 
@@ -35,7 +35,7 @@ def run_sfa():
 
     # Plot monitors for test data
     T_dc, T_ec, S_dc, S_ec = SlowFeature.calculate_crit_values()
-    data_iterable = [("Orig", X), ("IDV(4)", T4),
+    data_iterable = [("IDV(0)", T0), ("IDV(4)", T4),
                      ("IDV(5)", T5), ("IDV(10)", T10)]
     num_data = len(data_iterable)
     for name, test in data_iterable:
@@ -44,8 +44,8 @@ def run_sfa():
         stats = [Td, Te, Sd, Se]
         Tdc = threshold * T_dc
         Tec = threshold * T_ec
-        Sdc = (threshold - 1) * S_dc
-        Sec = (threshold - 1) * S_ec
+        Sdc = threshold * S_dc
+        Sec = threshold * S_ec
         stats_crit = [Tdc, Tec, Sdc, Sec]
         plotter.plot_monitors(name, stats, stats_crit)
 
@@ -53,6 +53,7 @@ def run_sfa():
 
 
 def run_incsfa():
+    epochs = 5
     plot_last_epoch = True
     # Import data
     X, T0, T4, T5, T10 = imp.import_tep_sets()
@@ -60,8 +61,7 @@ def run_incsfa():
     # IncSFA parameters
     num_vars = X.shape[0]
     data_points = X.shape[1]
-    theta = [10, 100, 4, 100, 0.08, 0.08, -1]
-    epochs = 25
+    theta = [10, 100, 4, 100, 0.001, 0.01, 1000]
     K = 99
     J = 99
     cutoff = 55
@@ -96,9 +96,8 @@ def run_incsfa():
             pos = j*X.shape[1]+i
             run = SlowFeature.add_data(X[:, i])
             # Store data
-            Y[:, pos] = run[0].reshape((J))
+            Y[:, pos] = run[0].flat
             stats[:, pos] = run[1]
-        X = np.flip(X, axis=1)
 
     if plot_last_epoch:
         Y = Y[:, -data_points:]
@@ -122,33 +121,26 @@ def run_incsfa():
             _, stats[:, i], stats_crit[:, i] = SlowFeature.evaluate(test[:, i],
                                                                     alpha=0.05)
         plotter.plot_monitors(name, stats, stats_crit)
-
     plt.show()
 
 
-def run_rsfa():
-    plot_last_epoch = True
-    epochs = 5
+def run_rsfa(plot_last_epoch=True, epochs=5):
     X, T0, T4, T5, T10 = imp.import_tep_sets()
 
     # RSFA parameters
     num_vars = X.shape[0]
     data_points = X.shape[1]
-    J = 99
     d = 2    # Lagged copies
     n = 1    # Expansion order
 
-    figure_text = (f"Epochs: {epochs} | $J=$ {J} | "
-                   f"Lagged Copies= {d} | Expansion Order= {n}")
-    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
     # Create RSFA object
-    SlowFeature = RSFA(num_vars, J, n, d)
+    SlowFeature = RSFA(num_vars, n, d)
     SlowFeature.delta = 3
     SlowFeature.Md = 55
 
     # Create empty arrays to store output
     total_data_points = data_points * epochs
-    Y = np.zeros((J, total_data_points))
+    Y = np.zeros((SlowFeature.output_variables, total_data_points))
     stats = np.zeros((4, total_data_points))
     stats_crit = np.zeros((4, total_data_points))
 
@@ -158,7 +150,7 @@ def run_rsfa():
             pos = j*X.shape[1]+i
             run = SlowFeature.add_data(X[:, i])
             # Store data
-            Y[:, pos] = run[0].reshape((J))
+            Y[:, pos] = run[0].flat
             stats[:, pos] = run[1]
             stats_crit[:, pos] = run[2]
 
@@ -174,6 +166,10 @@ def run_rsfa():
     speeds = speeds[order]
     Y = Y[order, :]
     eta = np.around((Y.shape[1]/(2*np.pi)) * np.sqrt(speeds), 2)
+
+    figure_text = (f"Epochs: {epochs} | $Md=$ {SlowFeature.Md} | "
+                   f"Lagged Copies= {d} | Expansion Order= {n}")
+    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
     plotter.plot_features("RSFA", Y, eta, num_features=5)
     plotter.plot_monitors("RSFA Stats", stats, stats_crit)
     # Plot monitors for test data
@@ -198,7 +194,6 @@ def run_rsfa():
 
 
 if __name__ == "__main__":
-    np.random.seed(1)
     while True:
         choice = input("Pick an algorithm"
                        "\n[1] SFA"

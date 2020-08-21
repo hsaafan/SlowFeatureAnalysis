@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 import tep_import as imp
 from data_node import IncrementalNode
 from standardization_node import IncrementalStandardization
+from standardization_node import RecursiveStandardization
 
 
 class IncSFA(IncrementalNode):
@@ -71,8 +72,6 @@ class IncSFA(IncrementalNode):
         The amount of features that are considered "slow"
     Me: int
         The amount of features that are considered "fast"
-    perm: numpy.ndarray
-        The permutation matrix used to order the features in order of slowness
     """
     time = 0
     num_features = 0
@@ -87,7 +86,6 @@ class IncSFA(IncrementalNode):
     features_speed = None
     Md = None
     Me = None
-    perm = None
 
     def __init__(self, input_variables, num_features, num_components,
                  theta=None, expansion_order=None, dynamic_copies=None):
@@ -117,15 +115,15 @@ class IncSFA(IncrementalNode):
         super().__init__(input_variables, dynamic_copies, expansion_order)
         self._store_theta(theta)
 
-        self.num_features = num_features
-        self.num_components = num_components
-        # Initialize matrices to random normal values
-        self.transformation_matrix = np.random.randn(num_components,
-                                                     num_features)
-        self._v_gam = np.random.randn(num_components, 1)
+        J = num_features
+        K = num_components
 
-        self.features_speed = np.zeros(num_features)
-        self.perm = np.eye(num_features, num_features)
+        self.num_components = K
+        self.num_features = J
+        self.transformation_matrix = np.random.randn(K, J)
+        self._v_gam = np.random.randn(K, 1)
+
+        self.features_speed = np.zeros(J)
 
     def _store_theta(self, theta):
         """ Checks and stores the scheduling parameters
@@ -153,7 +151,7 @@ class IncSFA(IncrementalNode):
                                "t1, t2, c, r, eta_l, eta_h, T")
         return
 
-    def _CIMCA_update(self, W, J, z_dot, gamma, eta):
+    def _CIMCA_update(self, W, z_dot, gamma, eta):
         """ Candid Covariance Free Incremental Minor Component Analysis
 
             Performs incremental minor component analysis [1]_.
@@ -162,8 +160,6 @@ class IncSFA(IncrementalNode):
         ----------
         W: numpy.ndarray
             The current estimate of the transformation matrix.
-        J: int
-            The number of features to calculate.
         z_dot: numpy.ndarray
             The derivative of the current whitened sample.
         gamma: numpy.ndarray
@@ -181,31 +177,30 @@ class IncSFA(IncrementalNode):
         from High-Dimensional Input Streams. Neural Computation, 24(11),
         2994–3024. <https://doi.org/10.1162/neco_a_00344>
         """
-        z_dot = z_dot.reshape((J))
-        gamma = gamma.reshape((J))
-        L = 0
+        K, J = W.shape
+        z_dot = z_dot.reshape((-1, 1))
+        gamma = gamma.reshape((-1, 1))
+        L = np.zeros((K, 1))
         for i in range(J):
-            prev_col = W[:, i]
+            w_prev = W[:, i].reshape((-1, 1))
             # Find new minor component
-            prev = (1 - eta) * prev_col
-            new = eta * (np.dot(z_dot, prev_col) * z_dot + L)
-            col_update = prev - new
+            historical = (1 - eta) * w_prev
+            update = eta * ((z_dot.T @ w_prev) * z_dot + gamma * L)
+            w_new = historical - update
 
             # Store minor component
-            W[:, i] = col_update/LA.norm(col_update)
+            w_new = w_new / LA.norm(w_new)
+            W[:, i] = w_new.flat
 
             # Update competition from lower components
-            lower_sum = np.zeros((J))
-            wi = W[:, i]
+            L = np.zeros((K, 1))
             for j in range(i):
-                wj = W[:, j]
-                lower_sum += np.dot(wj, wi) * wj
-
-            L = gamma*lower_sum
+                wj = W[:, j].reshape((-1, 1))
+                L += (wj.T @ w_new) * wj
 
         return(W)
 
-    def update_feature_speeds(self, Lambda, y_dot, count):
+    def update_feature_speeds(self, Lambda, y_dot, eta=0.01):
         """ Estimate the eigenvalues of the transformation matrix
 
         Parameters
@@ -214,8 +209,8 @@ class IncSFA(IncrementalNode):
             Previous estimate of singular values of the transformation matrix
         y_dot: numpy.ndarray
             Estimated derivative of slow features
-        count: int
-            The amount of data that has been passed so far.
+        eta: float
+            Learning rate
 
         Returns
         -------
@@ -223,10 +218,8 @@ class IncSFA(IncrementalNode):
             The new estimate of the singular values of the transformation
             matrix.
         """
-        Lambda_prev = np.copy(Lambda)
-        lam = np.multiply(y_dot, y_dot).reshape(self.num_features)
-        # Lambda = Lambda + (lam - Lambda) / count
-        Lambda = 0.99 * Lambda_prev + 0.01 * lam
+        lam = np.multiply(y_dot, y_dot).reshape((-1))
+        Lambda = (1 - eta) * Lambda + eta * lam
         return(Lambda)
 
     def calculate_monitoring_stats(self, Lambda, y, y_dot):
@@ -262,8 +255,8 @@ class IncSFA(IncrementalNode):
         y_dot_slow = y_dot[:self.Md, :]
         y_dot_fast = y_dot[self.Md:, :]
 
-        speed_slow = (Lambda[:self.Md]).reshape((self.Md))
-        speed_fast = (Lambda[self.Md:]).reshape((self.Me))
+        speed_slow = (Lambda[:self.Md]).reshape((-1))
+        speed_fast = (Lambda[self.Md:]).reshape((-1))
 
         # Calculate monitoring stats
         T_d = y_slow.T @ y_slow
@@ -273,15 +266,6 @@ class IncSFA(IncrementalNode):
         S_e = y_dot_fast.T @ np.diag(speed_fast**-1) @ y_dot_fast
 
         return(T_d, T_e, S_d, S_e)
-
-    def update_permutation_matrix(self):
-        """ Order the slow features based on their current speed estimates """
-        order = self.features_speed.argsort()
-        self.features_speed = self.features_speed[order]
-        self.perm = self.perm[order, :]
-        # Also update previous feature output to prevent errors with derivative
-        self.y_prev = self.y_prev @ self.perm
-        return
 
     def add_data(self, raw_sample, update_monitors=True,
                  calculate_monitors=False):
@@ -311,9 +295,9 @@ class IncSFA(IncrementalNode):
         stats = [0, 0, 0, 0]
 
         """ Signal preprocessing """
-        raw_sample = raw_sample.reshape((raw_sample.shape[0], 1))
-        x = self.process_sample(raw_sample)
-        if np.allclose(x, 0):
+        raw_sample = raw_sample.reshape((-1, 1))
+        sample = self.process_sample(raw_sample)
+        if np.allclose(sample, 0):
             # Need more data to get right number of dynamic copies
             return(y, stats)
 
@@ -327,9 +311,9 @@ class IncSFA(IncrementalNode):
             z_prev = self.standardized_previous
         else:
             # On first pass through, create the norm object
-            node = IncrementalStandardization(x, self.num_components)
+            node = IncrementalStandardization(sample, self.num_components)
             self.standardization_node = node
-        z = self.standardization_node.standardize_online(x, eta_PCA)
+        z = self.standardization_node.standardize_online(sample, eta_PCA)
         self.standardized_current = z
 
         """ Transformation """
@@ -340,15 +324,13 @@ class IncSFA(IncrementalNode):
             """ Derivative centering and first eigenvector output """
             if self.time == 1:
                 self.ccipa_object = IncrementalStandardization(z_dot, 1)
-            self._v_gam = self.ccipa_object.update_CCIPA(z_dot, eta_PCA)
-            gam = self._v_gam/LA.norm(self._v_gam)
-
+            self._v_gam = self.ccipa_object.update_CCIPA(z_dot, 1/self.time)
+            gam = self._v_gam / (LA.norm(self._v_gam) + 1e-64)
             # Updates minor components
-            W = self.transformation_matrix
-            W = self._CIMCA_update(W, self.num_features, z_dot, gam, eta_MCA)
-            self.transformation_matrix = W
-
-            y = z.T @ W @ self.perm
+            P = self.transformation_matrix
+            P = self._CIMCA_update(P, z_dot, gam, eta_MCA)
+            self.transformation_matrix = P
+            y = P.T @ z
 
             self.feature_previous = np.copy(self.feature_current)
             y_prev = self.feature_previous
@@ -361,13 +343,12 @@ class IncSFA(IncrementalNode):
             if update_monitors:
                 # Update the singular value estimate
                 Lam = self.features_speed
-                Lam = self.update_feature_speeds(Lam, y_dot, self.time - 1)
+                Lam = self.update_feature_speeds(Lam, y_dot, eta=0.01)
                 self.features_speed = Lam
             if calculate_monitors:
                 # Calculate the monitoring stats
                 stats = self.calculate_monitoring_stats(self.features_speed,
                                                         y, y_dot, self.Md)
-
         """ Update model and return """
         self.time += 1
         return(y, stats)
@@ -401,20 +382,21 @@ class IncSFA(IncrementalNode):
 
         """ Signal preprocessing """
         raw_sample = raw_sample.reshape((raw_sample.shape[0], 1))
-        x = self.process_sample(raw_sample)
-        if np.allclose(x, 0):
+        sample = self.process_sample(raw_sample)
+        if np.allclose(sample, 0):
             raise RuntimeError("Not enough data has been passed to the model "
                                "to test it")
 
         """ Signal centering and whitening """
         self.standardized_previous = np.copy(self.standardized_current)
-        z = self.standardization_node.standardize_similar(x)
+        z = self.standardization_node.standardize_similar(sample)
         self.standardized_current = z
 
         """ Transformation """
         y_prev = np.copy(self.feature_current)
         self.feature_previous = y_prev
-        y = (z.T @ self.transformation_matrix) @ self.perm
+        P = self.transformation_matrix
+        y = P.T @ z
         self.feature_current = y
 
         # Approximate derivative
@@ -449,6 +431,7 @@ class IncSFA(IncrementalNode):
         """
         t1, t2, c, r, nl, nh, T = theta
         time += 1  # Prevents divide by 0 errors
+        """
         if time == 1:
             mu_t = -1e-6
         elif time <= t1:
@@ -457,14 +440,15 @@ class IncSFA(IncrementalNode):
             mu_t = c * (time - t1)/(t2 - t1)
         else:
             mu_t = c + (time - t2)/r
-
         eta_PCA = (1 + mu_t)/time
+        """
+
         if time <= T:
             eta_MCA = nl + (nh - nl)*((time / T)**2)
         else:
             eta_MCA = nh
         # TODO: Remove this
-        L = 3
+        L = -.5
         eta_PCA = (1 + L)/time
         return(eta_PCA, eta_MCA)
 
