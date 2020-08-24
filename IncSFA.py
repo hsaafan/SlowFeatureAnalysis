@@ -347,11 +347,11 @@ class IncSFA(IncrementalNode):
             """ Derivative centering and first eigenvector output """
             if self.time == 1 + delay:
                 self.ccipa_object = IncrementalStandardization(z_dot, 1)
-            # self._v_gam = self.ccipa_object.update_CCIPA(z_dot, eta_PCA)
-            # # gam = self._v_gam / (LA.norm(self._v_gam) + 1e-64)
-            # gam = LA.norm(self._v_gam)
-            # # Updates minor components
-            gam = 4
+            self._v_gam = self.ccipa_object.update_CCIPA(z_dot, eta_PCA)
+            # gam = self._v_gam / (LA.norm(self._v_gam) + 1e-64)
+            gam = LA.norm(self._v_gam)
+            # Updates minor components
+            # gam = 4
             # z_dot = self.ccipa_object._center(z_dot, eta_PCA)
             P = self.transformation_matrix
             P = self._CIMCA_update(P, z_dot, gam, eta_PCA, cov_free=True)
