@@ -92,6 +92,7 @@ class RSFA(IncrementalNode):
 
     def _learning_schedule(self):
         """ Set the learning rate """
+        # TODO: Decide on a schedule
         eta = np.max([1 / (self.time + 2), 1e-4])
         return(eta)
 
@@ -309,7 +310,6 @@ class RSFA(IncrementalNode):
             return(y, stats, stats_crit)
 
         """ Update Learning rate """
-        # TODO: Set learning rate schedule
         eta = self._learning_schedule()
 
         """ Signal centering and whitening """

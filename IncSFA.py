@@ -27,7 +27,8 @@ import matplotlib.pyplot as plt
 import tep_import as imp
 from data_node import IncrementalNode
 from standardization_node import IncrementalStandardization
-from standardization_node import RecursiveStandardization
+
+eps = 1e-64
 
 
 class IncSFA(IncrementalNode):
@@ -120,7 +121,7 @@ class IncSFA(IncrementalNode):
 
         self.num_components = K
         self.num_features = J
-        self.transformation_matrix = np.random.randn(K, J)
+        self.transformation_matrix = np.eye(K, J)
         self._v_gam = np.random.randn(K, 1)
 
         self.features_speed = np.zeros(J)
@@ -151,7 +152,7 @@ class IncSFA(IncrementalNode):
                                "t1, t2, c, r, eta_l, eta_h, T")
         return
 
-    def _CIMCA_update(self, W, z_dot, gamma, eta):
+    def _CIMCA_update(self, W, z_dot, gamma, eta, cov_free=True):
         """ Candid Covariance Free Incremental Minor Component Analysis
 
             Performs incremental minor component analysis [1]_.
@@ -178,26 +179,37 @@ class IncSFA(IncrementalNode):
         2994–3024. <https://doi.org/10.1162/neco_a_00344>
         """
         K, J = W.shape
-        z_dot = z_dot.reshape((-1, 1))
-        gamma = gamma.reshape((-1, 1))
-        L = np.zeros((K, 1))
-        for i in range(J):
-            w_prev = W[:, i].reshape((-1, 1))
-            # Find new minor component
-            historical = (1 - eta) * w_prev
-            update = eta * ((z_dot.T @ w_prev) * z_dot + gamma * L)
-            w_new = historical - update
-
-            # Store minor component
-            w_new = w_new / LA.norm(w_new)
-            W[:, i] = w_new.flat
-
-            # Update competition from lower components
+        x = z_dot.reshape((-1, 1))
+        if not cov_free:
+            C = np.zeros((J, J))
+            for i in range(J):
+                wi = W[:, i].reshape((-1, 1))
+                xxc = x @ x.T + C
+                wxxcw = wi.T @ xxc @ wi
+                delta = xxc @ wi - (wxxcw / (wi.T @ wi) ** 2) * wi
+                wi = wi - eta * delta
+                wi = wi / LA.norm(wi)
+                W[:, i] = wi.flat
+                C += gamma * (wi @ wi.T)
+        else:
             L = np.zeros((K, 1))
-            for j in range(i):
-                wj = W[:, j].reshape((-1, 1))
-                L += (wj.T @ w_new) * wj
+            for i in range(J):
+                lower_sum = np.zeros((K, 1))
+                w_prev = W[:, i].reshape((-1, 1))
+                for j in range(i):
+                    wj = W[:, j].reshape((-1, 1))
+                    lower_sum += (wj.T @ w_prev) * wj
+                L = gamma * lower_sum
 
+                wx = x.T @ w_prev
+                wl = w_prev.T @ L
+                a = (w_prev.T @ w_prev + eps) ** -2
+                b = wx ** 2
+                delta = wx * x + L - a*b*w_prev - a*wl*w_prev
+                w_new = w_prev - eta * delta
+                w_norm = LA.norm(w_new) + eps
+                w_new = w_new / w_norm
+                W[:, i] = w_new.flat
         return(W)
 
     def update_feature_speeds(self, Lambda, y_dot, eta=0.01):
@@ -245,15 +257,15 @@ class IncSFA(IncrementalNode):
         S_e: float
             The S^2 statistic for the fastest features
         """
-        y = y.reshape((self.num_features, 1))
-        y_dot = y_dot.reshape((self.num_features, 1))
+        y = y.reshape((-1))
+        y_dot = y_dot.reshape((-1))
 
         # Split features, derivatives, and speeds into slowest and fastest
-        y_slow = y[:self.Md, :]
-        y_fast = y[self.Md:, :]
+        y_slow = y[:self.Md].reshape((-1, 1))
+        y_fast = y[self.Md:].reshape((-1, 1))
 
-        y_dot_slow = y_dot[:self.Md, :]
-        y_dot_fast = y_dot[self.Md:, :]
+        y_dot_slow = y_dot[:self.Md].reshape((-1, 1))
+        y_dot_fast = y_dot[self.Md:].reshape((-1, 1))
 
         speed_slow = (Lambda[:self.Md]).reshape((-1))
         speed_fast = (Lambda[self.Md:]).reshape((-1))
@@ -268,7 +280,7 @@ class IncSFA(IncrementalNode):
         return(T_d, T_e, S_d, S_e)
 
     def add_data(self, raw_sample, update_monitors=True,
-                 calculate_monitors=False):
+                 calculate_monitors=False, use_svd_whitening=True):
         """ Update the IncSFA model with new data points
 
         Parameters
@@ -313,42 +325,59 @@ class IncSFA(IncrementalNode):
             # On first pass through, create the norm object
             node = IncrementalStandardization(sample, self.num_components)
             self.standardization_node = node
-        z = self.standardization_node.standardize_online(sample, eta_PCA)
-        self.standardized_current = z
+            self.cov = np.zeros((sample.shape[0], sample.shape[0]))
+        if use_svd_whitening:
+            self.cov = (1-eta_PCA) * self.cov + eta_PCA * sample @ sample.T
+            U, L, UT = LA.svd(self.cov)
+            Q = U @ np.diag(L ** -0.5)
+            z = Q.T @ sample
+            self.standardization_node.whitening_matrix = Q.T
+        else:
+            z = self.standardization_node.standardize_online(sample, eta_PCA)
 
+        self.standardized_current = z
         """ Transformation """
         # time > 0, derivative can be calculated, proceed to update model
-        if self.time > 0:
+        delay = 0
+        if self.time > 0 + delay:
+            eta_PCA, eta_MCA = self._learning_rate_schedule(self.theta,
+                                                            self.time - delay)
             z_dot = (z - z_prev)/self.delta
             # Update first PC in whitened difference space and gamma
             """ Derivative centering and first eigenvector output """
-            if self.time == 1:
+            if self.time == 1 + delay:
                 self.ccipa_object = IncrementalStandardization(z_dot, 1)
-            self._v_gam = self.ccipa_object.update_CCIPA(z_dot, 1/self.time)
-            gam = self._v_gam / (LA.norm(self._v_gam) + 1e-64)
-            # Updates minor components
+            # self._v_gam = self.ccipa_object.update_CCIPA(z_dot, eta_PCA)
+            # # gam = self._v_gam / (LA.norm(self._v_gam) + 1e-64)
+            # gam = LA.norm(self._v_gam)
+            # # Updates minor components
+            gam = 4
+            # z_dot = self.ccipa_object._center(z_dot, eta_PCA)
             P = self.transformation_matrix
-            P = self._CIMCA_update(P, z_dot, gam, eta_MCA)
+            P = self._CIMCA_update(P, z_dot, gam, eta_PCA, cov_free=True)
+            # P = FDPM(P, z_dot, mu_bar=0.95)
             self.transformation_matrix = P
+
             y = P.T @ z
 
             self.feature_previous = np.copy(self.feature_current)
             y_prev = self.feature_previous
             self.feature_current = y
 
-        """ Update monitoring stats """
-        if self.time > 2 and (update_monitors or calculate_monitors):
-            # Approximate derivative
-            y_dot = (y - y_prev)/self.delta
-            if update_monitors:
-                # Update the singular value estimate
-                Lam = self.features_speed
-                Lam = self.update_feature_speeds(Lam, y_dot, eta=0.01)
-                self.features_speed = Lam
-            if calculate_monitors:
-                # Calculate the monitoring stats
-                stats = self.calculate_monitoring_stats(self.features_speed,
-                                                        y, y_dot, self.Md)
+            """ Update monitoring stats """
+            if self.time > 2 + delay:
+                # Approximate derivative
+                y_dot = (y - y_prev)/self.delta
+                if update_monitors:
+                    # Update the singular value estimate
+                    Lam = self.features_speed
+                    Lam = self.update_feature_speeds(Lam, y_dot, eta=0.01)
+                    self.features_speed = Lam
+                if calculate_monitors:
+                    # Calculate the monitoring stats
+                    Lam = self.features_speed
+                    stats = self.calculate_monitoring_stats(Lam, y, y_dot,
+                                                            self.Md)
         """ Update model and return """
         self.time += 1
         return(y, stats)
@@ -424,10 +453,6 @@ class IncSFA(IncrementalNode):
             The learning rate for principal component analysis
         eta_MCA: float
             The learning rate for minor component analysis
-
-        Notes
-        -----
-        #TODO: Figure out how to explain these parameters
         """
         t1, t2, c, r, nl, nh, T = theta
         time += 1  # Prevents divide by 0 errors
@@ -447,9 +472,8 @@ class IncSFA(IncrementalNode):
             eta_MCA = nl + (nh - nl)*((time / T)**2)
         else:
             eta_MCA = nh
-        # TODO: Remove this
-        L = -.5
-        eta_PCA = (1 + L)/time
+        L = 2
+        eta_PCA = np.max([(1 + L)/time, 1e-4])
         return(eta_PCA, eta_MCA)
 
     def calculate_crit_values(self, alpha=0.01):

@@ -88,7 +88,6 @@ def run_incsfa():
 
     stats = np.zeros((4, total_data_points))
     stats_crit = np.zeros((4, total_data_points))
-
     # Train model
     for j in range(epochs):
         print("Running epoch " + str(j+1) + "/" + str(epochs))
@@ -104,9 +103,11 @@ def run_incsfa():
         stats = stats[:, -data_points:]
     eta = np.around(Y.shape[1]/(2*np.pi)
                     * np.sqrt(SlowFeature.features_speed), 2)
+    order = eta.argsort()
+    Y = Y[order, :]
+    eta = eta[order]
     # Plot slow features
     plotter.plot_features("IncSFA", Y, eta, num_features=5)
-
     # Plot monitors for test data
     test_data = [("IDV(0)", T0), ("IDV(4)", T4),
                  ("IDV(5)", T5), ("IDV(10)", T10)]
@@ -119,7 +120,7 @@ def run_incsfa():
 
         for i in range(data_points):
             _, stats[:, i], stats_crit[:, i] = SlowFeature.evaluate(test[:, i],
-                                                                    alpha=0.05)
+                                                                    alpha=0.01)
         plotter.plot_monitors(name, stats, stats_crit)
     plt.show()
 
@@ -173,7 +174,6 @@ def run_rsfa(plot_last_epoch=True, epochs=5):
     plotter.plot_features("RSFA", Y, eta, num_features=5)
     plotter.plot_monitors("RSFA Stats", stats, stats_crit)
     # Plot monitors for test data
-    # TODO: Add evaluation mode to data
     test_data = [("IDV(0)", T0), ("IDV(4)", T4),
                  ("IDV(5)", T5), ("IDV(10)", T10)]
     num_tests = len(test_data)

@@ -11,7 +11,6 @@ _max_features = 250
 
 
 def dataSetup():
-    # TODO: Importing data everytime is slow, speed this up somehow
     training_sets = list(imp.importTrainingSets([0]))
     training_set_0 = training_sets[0]
     X = training_set_0[1]

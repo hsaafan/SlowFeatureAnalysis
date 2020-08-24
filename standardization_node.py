@@ -33,7 +33,7 @@ import scipy
 
 from data_node import Node
 
-eps = np.finfo(float).eps
+eps = 1e-64
 
 
 class Standardization(Node):
@@ -213,7 +213,7 @@ class IncrementalStandardization(Node):
 
         # Initialize eigensystem
         d = first_sample.shape[0]
-        self.eigensystem = np.ones((d, self.num_components))
+        self.eigensystem = np.eye(d, self.num_components)
         self._count = 0
 
     def _store_num_components(self, num_components):
@@ -251,6 +251,8 @@ class IncrementalStandardization(Node):
         """
         self.offset = (1 - eta) * self.offset + eta * sample
         centered_sample = sample - self.offset
+        if np.allclose(centered_sample, 0):
+            return(sample)
         return(centered_sample)
 
     def _CCIPA(self, eigensystem, sample, eta):
@@ -281,31 +283,42 @@ class IncrementalStandardization(Node):
         Transactions on Pattern Analysis and Machine Intelligence, 25(8),
         1034–1040. <https://doi.org/10.1109/tpami.2003.1217609>
         """
-        max_iter = int(np.min([self.num_components, self._count + 1]))
+        # max_iter = int(np.min([self.num_components, self._count + 1]))
+        # u = sample.reshape((-1, 1))
+        # u_orig = np.copy(u)
+        # resid_sum = np.zeros_like(u)
+        # for i in range(max_iter):
+        #     u = u_orig - resid_sum
+        #     if i == self._count:
+        #         eigensystem[:, i] = u.flat
+        #     else:
+        #         # Get previous estimate of v
+        #         v_prev = eigensystem[:, i].reshape((-1, 1))
+        #         v_prev_norm = LA.norm(v_prev) + eps
+
+        #         # Get new estimate of v
+        #         historical = (1 - eta) * v_prev
+        #         projection = (u_orig.T @ v_prev) / v_prev_norm
+        #         update = eta * u * projection
+        #         v_new = historical + update
+
+        #         # Store new estimate
+        #         eigensystem[:, i] = v_new.flat
+
+        #         # Update sum from projections
+        #         v_norm = LA.norm(v_new) + eps
+        #         resid_sum += ((u_orig.T @ v_new) * v_new)/(v_norm ** 2)
         u = sample.reshape((-1, 1))
-        u_orig = np.copy(u)
-        resid_sum = np.zeros_like(u)
-        for i in range(max_iter):
-            u = u_orig - resid_sum
-            if i == self._count:
-                eigensystem[:, i] = u.flat
-            else:
-                # Get previous estimate of v
-                v_prev = eigensystem[:, i].reshape((-1, 1))
-                v_prev_norm = LA.norm(v_prev) + eps
+        for i in range(self.num_components):
+            v_prev = eigensystem[:, i].reshape((-1, 1))
+            v_norm = LA.norm(v_prev) + eps
+            projection = (u.T @ v_prev) / v_norm
+            v_new = (1 - eta) * v_prev + eta * projection * u
+            v_norm = LA.norm(v_new) + eps
+            u = u - (u.T @ v_new) * v_new / (v_norm ** 2)
+            eigensystem[:, i] = v_new.flat
+        # eigensystem = FDPM(eigensystem, sample, minor=False, mu_bar=0.99)
 
-                # Get new estimate of v
-                historical = (1 - eta) * v_prev
-                projection = (u_orig.T @ v_prev) / v_prev_norm
-                update = eta * u * projection
-                v_new = historical + update
-
-                # Store new estimate
-                eigensystem[:, i] = v_new.flat
-
-                # Update sum from projections
-                v_norm = LA.norm(v_new) + eps
-                resid_sum += ((u_orig.T @ v_new) * v_new)/(v_norm ** 2)
         return(eigensystem)
 
     def _get_whitening_matrix(self, eigensystem, zca_whitening=False):
@@ -355,7 +368,6 @@ class IncrementalStandardization(Node):
             Sample that has been transformed by the current whitening matrix
             estimate
         """
-        sample = sample.reshape((-1, 1))
         self.eigensystem = self._CCIPA(self.eigensystem, sample, eta)
         self.whitening_matrix = self._get_whitening_matrix(self.eigensystem)
         whitened_sample = self.whitening_matrix @ sample
@@ -554,7 +566,6 @@ class RecursiveStandardization(Node):
             Sample that has been transformed by the current whitening matrix
             estimate
         """
-        # TODO: Replace SVD with rank one modification as in paper
         U, L, UT = LA.svd(self.covariance)
         self.whitening_matrix = U @ np.diag(L ** (-1/2))
         self.whitening_eigenvals = L

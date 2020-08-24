@@ -84,9 +84,9 @@ class SFAPlotter:
             plt.subplot(4, 1, i+1)
             plt.title(titles[i])
             plt.xlabel("Sample")
-            plt.plot(stats[i])
+            plt.plot(stats[i, 3:])
             if stats_crit is not None:
-                plt.plot(stats_crit[i])
+                plt.plot(stats_crit[i, 3:])
         _s.set_size_inches(16, 9)
         if self.show:
             plt.show()
@@ -96,15 +96,15 @@ class SFAPlotter:
         return
 
     def plot_standardized(self, fig_name, Z):
-        # Plots first 30 variables of Z
+        # Plots first 60 variables of Z
         for i in range(3):
             _z = plt.figure(fig_name)
             plt.figtext(0.05, 0.02, self.figure_text)
-            for j in range(10):
-                plt.subplot(5, 2, j+1)
+            for j in range(20):
+                plt.subplot(5, 4, j+1)
                 plt.xlabel("Sample")
-                plt.plot(Z[10*i + j, :])
-            _z.set_size_inches(16, 9)
+                plt.plot(Z[20*i + j, :])
+            _z.set_size_inches(8, 6)
             if self.show:
                 plt.show()
             if self.save:
