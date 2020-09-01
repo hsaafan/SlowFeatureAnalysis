@@ -11,83 +11,130 @@ from incsfa import IncSFA
 from rsfa import RSFA
 
 
-# TODO: Document all these functions and clean them up
-def run_sfa():
-    # Import TEP
-    X, T0, T4, T5, T10 = imp.import_tep_sets()
-    plotter = SFAPlotter(show=False, save=True, figure_text="")
-    d = 2    # Lagged copies
-    q = 0.1  # Partition fraction
-    n = 1    # Expansion order
-    Md = 55  # Slow features to keep
+def run_sfa(dynamic_copies=2, expansion_order=1, cut_off=55):
+    """ Batch Slow Feature Analysis
 
-    # Run SFA
-    SlowFeature = SFA(X, d, n)
+    Runs the batch slow feature analysis algorithm on the Tennessee Eastman
+    process data set
+
+    Parameters
+    ----------
+    dynamic_copies: int
+        The number of lagged copies per data point
+    expansion_order: int
+        The order of nonlinear expansion performed on the data
+    cut_off: int
+        The index to split the features into the slow and fast groups
+    """
+
+    """ Import data """
+    X, T0, T4, T5, T10 = imp.import_tep_sets()
+
+    """ Create plotter object """
+    figure_text = (f"Lagged Copies= {dynamic_copies} | "
+                   f"Expansion Order= {expansion_order} | "
+                   f"$M_d$= {cut_off}")
+    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
+
+    """ Train model """
+    SlowFeature = SFA(data=X,
+                      dynamic_copies=dynamic_copies,
+                      expansion_order=expansion_order)
     SlowFeature.delta = 3
     Y = SlowFeature.train()
-    SlowFeature.partition(q)
-    SlowFeature.partition_manual(Md)
+    SlowFeature.partition_manual(cut_off)
+    # Calculate speed indices for features
     eta = np.around((X.shape[1]/(2*np.pi)) *
                     np.sqrt(SlowFeature.features_speed), 2)
 
-    # Plot slow features
+    # Plot features
     plotter.plot_features("SFA", Y, eta, num_features=5)
 
-    # Plot monitors for test data
+    """ Test model """
     T_dc, T_ec, S_dc, S_ec = SlowFeature.calculate_crit_values()
-    data_iterable = [("IDV(0)", T0), ("IDV(4)", T4),
-                     ("IDV(5)", T5), ("IDV(10)", T10)]
-    num_data = len(data_iterable)
+    data_iterable = [("SFA_IDV(0)", T0), ("SFA_IDV(4)", T4),
+                     ("SFA_IDV(5)", T5), ("SFA_IDV(10)", T10)]
     for name, test in data_iterable:
-        Td, Te, Sd, Se = SlowFeature.calculate_monitors(test)
-        threshold = np.ones(test.shape[1])
-        stats = [Td, Te, Sd, Se]
+        print("Evaluating test: " + name)
+        stats = SlowFeature.calculate_monitors(test).T
+        # Create critical value lines for plots
+        threshold = np.ones((test.shape[1], 1))
         Tdc = threshold * T_dc
         Tec = threshold * T_ec
         Sdc = threshold * S_dc
         Sec = threshold * S_ec
-        stats_crit = [Tdc, Tec, Sdc, Sec]
+        stats_crit = np.concatenate((Tdc, Tec, Sdc, Sec), axis=1).T
+        # Plot stats
         plotter.plot_monitors(name, stats, stats_crit)
 
     plt.show()
 
 
-def run_incsfa():
-    epochs = 5
-    plot_last_epoch = True
-    # Import data
+def run_incsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
+               num_whitened_signals=99, num_features=99,
+               sample_weight_parameter=2, conv_tol=0.001, epochs=10,
+               plot_last_epoch=True):
+    """ Incremental Slow Feature Analysis
+
+    Runs the incremental slow feature analysis algorithm on the Tennessee
+    Eastman process data set
+
+    Parameters
+    ----------
+    dynamic_copies: int
+        The number of lagged copies per data point
+    expansion_order: int
+        The order of nonlinear expansion performed on the data
+    cut_off: int
+        The index to split the features into the slow and fast groups
+    num_whitened_signals: int
+        The number of principal components to calculate in the whitening step
+    num_features: int
+        The number of features to calculate
+    sample_weight_parameter: float
+        The sample weighting parameter used for setting the learning rate
+    conv_tol: float
+        The tolerance for convergance
+    epochs: int
+        The number of times to pass the training data to the model
+    plot_last_epoch: boolean
+        Only plot the last epoch of data for the features plot
+    """
+
+    """ Import data """
     X, T0, T4, T5, T10 = imp.import_tep_sets()
+    num_vars, data_points = X.shape
 
-    # IncSFA parameters
-    num_vars = X.shape[0]
-    data_points = X.shape[1]
-    theta = [10, 100, 4, 100, 0.001, 0.01, 1000]
-    K = 99
-    J = 99
-    cutoff = 55
-    d = 2    # Lagged copies
-    n = 1    # Expansion order
+    """ Create plotter object """
+    figure_text = (f"Lagged Copies= {dynamic_copies} | "
+                   f"Expansion Order= {expansion_order} | "
+                   f"$M_d$= {cut_off} | "
+                   f"Epochs: {epochs}  | "
+                   f"K= {num_whitened_signals} | "
+                   f"J= {num_features} | "
+                   f"L= {sample_weight_parameter} | "
+                   f"Tolerance= {conv_tol}")
+    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
 
-    figure_text = (f"Epochs: {epochs} | $t_1=$ {theta[0]} | "
-                   f"$t_2=$ {theta[1]} | $c=$ {theta[2]} | "
-                   f"$r=$ {theta[3]} | $\eta_l=$ {theta[4]} | "
-                   f"$\eta_h=$ {theta[5]} | $T=$ {theta[6]} | "
-                   f"$K=$ {K} | $J=$ {J} | Lagged Copies= {d} | "
-                   f"Expansion Order= {n}")
-    plotter = SFAPlotter(show=False, save=False, figure_text=figure_text)
-
+    """ Train model """
     # Create IncSFA object
-    SlowFeature = IncSFA(num_vars, J, K, theta, n, d)
+    SlowFeature = IncSFA(input_variables=num_vars,
+                         num_features=num_features,
+                         num_components=num_whitened_signals,
+                         L=sample_weight_parameter,
+                         expansion_order=expansion_order,
+                         dynamic_copies=dynamic_copies,
+                         conv_tol=conv_tol)
     SlowFeature.delta = 3
-    SlowFeature.Md = cutoff
-    SlowFeature.Me = J - cutoff
+    SlowFeature.Md = cut_off
+    SlowFeature.Me = num_features - cut_off
 
     # Create empty arrays to store outputs
     total_data_points = data_points * epochs
-    Y = np.zeros((J, total_data_points))
-
+    Y = np.zeros((num_features, total_data_points))
     stats = np.zeros((4, total_data_points))
     stats_crit = np.zeros((4, total_data_points))
+
     # Train model
     for j in range(epochs):
         print("Running epoch " + str(j+1) + "/" + str(epochs))
@@ -97,51 +144,100 @@ def run_incsfa():
             # Store data
             Y[:, pos] = run[0].flat
             stats[:, pos] = run[1]
+            stats_crit[:, pos] = run[2]
 
     if plot_last_epoch:
         Y = Y[:, -data_points:]
         stats = stats[:, -data_points:]
+        stats_crit = stats_crit[:, -data_points:]
+    # Calculate speed indices for features
     eta = np.around(Y.shape[1]/(2*np.pi)
                     * np.sqrt(SlowFeature.features_speed), 2)
-    order = eta.argsort()
-    Y = Y[order, :]
-    eta = eta[order]
-    # Plot slow features
+
+    # Plot features
     plotter.plot_features("IncSFA", Y, eta, num_features=5)
-    # Plot monitors for test data
-    test_data = [("IDV(0)", T0), ("IDV(4)", T4),
-                 ("IDV(5)", T5), ("IDV(10)", T10)]
-    num_tests = len(test_data)
+
+    """ Test model """
+    test_data = [("IncSFA_IDV(0)", T0), ("IncSFA_IDV(4)", T4),
+                 ("IncSFA_IDV(5)", T5), ("IncSFA_IDV(10)", T10)]
     for name, test in test_data:
         print("Evaluating test: " + name)
+        test_obj = copy.deepcopy(SlowFeature)
         data_points = test.shape[1]
         stats = np.zeros((4, data_points))
         stats_crit = np.zeros((4, data_points))
 
         for i in range(data_points):
-            _, stats[:, i], stats_crit[:, i] = SlowFeature.evaluate(test[:, i],
-                                                                    alpha=0.01)
+            _, stats[:, i], stats_crit[:, i] = test_obj.add_data(test[:, i],
+                                                                 alpha=0.01)
+        # Plot stats
         plotter.plot_monitors(name, stats, stats_crit)
+
     plt.show()
 
 
-def run_rsfa(plot_last_epoch=True, epochs=5):
+def run_rsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
+             num_whitened_signals=99, num_features=99,
+             sample_weight_parameter=2, epochs=10, conv_tol=0.01,
+             plot_last_epoch=True):
+    """ Recursive Slow Feature Analysis
+
+    Runs the recursive slow feature analysis algorithm on the Tennessee
+    Eastman process data set
+
+    Parameters
+    ----------
+    dynamic_copies: int
+        The number of lagged copies per data point
+    expansion_order: int
+        The order of nonlinear expansion performed on the data
+    cut_off: int
+        The index to split the features into the slow and fast groups
+    num_whitened_signals: int
+        The number of principal components to calculate in the whitening step
+    num_features: int
+        The number of features to calculate
+    sample_weight_parameter: float
+        The sample weighting parameter used for setting the learning rate
+    conv_tol: float
+        The tolerance for convergance
+    epochs: int
+        The number of times to pass the training data to the model
+    plot_last_epoch: boolean
+        Only plot the last epoch of data for the features plot
+    """
+
+    """ Import data """
     X, T0, T4, T5, T10 = imp.import_tep_sets()
+    num_vars, data_points = X.shape
 
-    # RSFA parameters
-    num_vars = X.shape[0]
-    data_points = X.shape[1]
-    d = 2    # Lagged copies
-    n = 1    # Expansion order
+    """ Create plotter object """
+    figure_text = (f"Lagged Copies= {dynamic_copies} | "
+                   f"Expansion Order= {expansion_order} | "
+                   f"$M_d$= {cut_off} | "
+                   f"Epochs: {epochs}  | "
+                   f"K= {num_whitened_signals} | "
+                   f"J= {num_features} | "
+                   f"L= {sample_weight_parameter} | "
+                   f"Tolerance= {conv_tol}")
+    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
 
+    """ Train model """
     # Create RSFA object
-    SlowFeature = RSFA(num_vars, n, d)
+    SlowFeature = RSFA(input_variables=num_vars,
+                       num_features=num_features,
+                       num_components=num_whitened_signals,
+                       L=sample_weight_parameter,
+                       expansion_order=expansion_order,
+                       dynamic_copies=dynamic_copies,
+                       conv_tol=conv_tol)
     SlowFeature.delta = 3
-    SlowFeature.Md = 55
+    SlowFeature.Md = cut_off
+    SlowFeature.Me = num_features - cut_off
 
     # Create empty arrays to store output
     total_data_points = data_points * epochs
-    Y = np.zeros((SlowFeature.output_variables, total_data_points))
+    Y = np.zeros((num_features, total_data_points))
     stats = np.zeros((4, total_data_points))
     stats_crit = np.zeros((4, total_data_points))
 
@@ -159,37 +255,30 @@ def run_rsfa(plot_last_epoch=True, epochs=5):
         Y = Y[:, -data_points:]
         stats = stats[:, -data_points:]
         stats_crit = stats_crit[:, -data_points:]
-    # TODO: Order features within class
-    y_dot = np.diff(Y) / SlowFeature.delta
-    speeds = (y_dot @ y_dot.T) / (Y.shape[1] - 1)
-    speeds = np.diag(speeds)
-    order = speeds.argsort()
-    speeds = speeds[order]
-    Y = Y[order, :]
-    eta = np.around((Y.shape[1]/(2*np.pi)) * np.sqrt(speeds), 2)
+    # Calculate speed indices for features
+    eta = np.around(Y.shape[1]/(2*np.pi)
+                    * np.sqrt(SlowFeature.features_speed), 2)
 
-    figure_text = (f"Epochs: {epochs} | $Md=$ {SlowFeature.Md} | "
-                   f"Lagged Copies= {d} | Expansion Order= {n}")
-    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
+    # Plot features
     plotter.plot_features("RSFA", Y, eta, num_features=5)
-    plotter.plot_monitors("RSFA Stats", stats, stats_crit)
-    # Plot monitors for test data
-    test_data = [("IDV(0)", T0), ("IDV(4)", T4),
-                 ("IDV(5)", T5), ("IDV(10)", T10)]
-    num_tests = len(test_data)
+
+    """ Test model """
+    test_data = [("RSFA_IDV(0)", T0), ("RSFA_IDV(4)", T4),
+                 ("RSFA_IDV(5)", T5), ("RSFA_IDV(10)", T10)]
     for name, test in test_data:
-        test_obj = copy.deepcopy(SlowFeature)
         print("Evaluating test: " + name)
+        test_obj = copy.deepcopy(SlowFeature)
         data_points = test.shape[1]
         stats = np.zeros((4, data_points))
         stats_crit = np.zeros((4, data_points))
 
         for i in range(data_points):
-            run = test_obj.add_data(test[:, i])
-            # Store data
-            stats[:, i] = run[1]
-            stats_crit[:, i] = run[2]
+            _, stats[:, i], stats_crit[:, i] = test_obj.add_data(test[:, i],
+                                                                 alpha=0.01)
+
+        # Plot stats
         plotter.plot_monitors(name, stats, stats_crit)
+
     plt.show()
 
 

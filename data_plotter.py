@@ -1,4 +1,10 @@
-""" Plotting features and monitoring stats """
+""" Plotting features and monitoring stats
+
+Classes
+-------
+SFAPlotter: class
+    Plotting class for generic plots in paper
+"""
 
 __author__ = "Hussein Saafan"
 
@@ -7,18 +13,59 @@ import matplotlib.pyplot as plt
 
 
 class SFAPlotter:
+    """ Slow Feature Analysis Plotter
+
+    Creates plots from the outputs of the different SFA classes
+
+    Attributes
+    ----------
+    show: boolean
+        Show the plots once they're created
+    save: boolean
+        Save the plots to the working directory
+    figure_text: str
+        Caption text at the bottom of each plot
+    """
 
     show = True
     save = False
     figure_text = ""
 
     def __init__(self, show=True, save=False, figure_text=""):
+        """ Class constructor
+
+        Parameters
+        ----------
+        show: boolean
+            Show the plots once they're created
+        save: boolean
+            Save the plots to the working directory
+        figure_text: str
+            Caption text at the bottom of each plot
+        """
         self.show = show
         self.save = save
         self.figure_text = figure_text
-        return
 
     def plot_features(self, fig_name, features, eta, num_features=5):
+        """ Plot the feature outputs
+
+        Plots the slowest, middle, and fastest feature outputs in 3 columns
+        with the speed index (eta) as a label on the plots
+
+        Parameters
+        ----------
+        fig_name: str
+            The name of the figure used for the file name if saving
+        features: numpy.ndarray
+            The numpy array of shape (J, n) containing the feature outputs
+            where J is the number of features and n is the number of samples
+        eta: numpy.ndarray
+            The array of shape (J, ) which contains the speed indices of the
+            different features being plotted
+        num_features: int
+            The number of features to plot in each column
+        """
         _f = plt.figure(fig_name)
         plt.figtext(0.25, 0.05, self.figure_text)
 
@@ -76,6 +123,22 @@ class SFAPlotter:
         return
 
     def plot_monitors(self, fig_name, stats, stats_crit=None):
+        """ Plot the 4 monitoring statistics
+
+        Plots the four different monitoring statistics and their critical
+        values onto one figure
+
+        Parameters
+        ----------
+        fig_name: str
+            The name of the figure used for the file name if saving
+        stats: numpy.ndarray
+            The numpy array of shape (4, n) containing the monitoring stats
+            where n is the number of samples
+        stats_crit: numpy.ndarray
+            The numpy array of shape (4, n) containing the critical monitoring
+            stats where n is the number of samples
+        """
         _s = plt.figure(fig_name)
         plt.subplots_adjust(wspace=0.4)
         plt.figtext(0.05, 0.02, self.figure_text)
@@ -96,6 +159,20 @@ class SFAPlotter:
         return
 
     def plot_standardized(self, fig_name, Z):
+        """ Plot the first 60 whitened signals
+
+        Plots the first 60 whitened signals which can be useful for
+        debugging
+
+        Parameters
+        ----------
+        fig_name: str
+            The name of the figure used for the file name if saving
+        Z: numpy.ndarray
+            The numpy array of shape (K, n) containing the monitoring stats
+            where n is the number of samples and K >= 60 is the number of
+            whitened signals
+        """
         # Plots first 60 variables of Z
         for i in range(3):
             _z = plt.figure(fig_name)

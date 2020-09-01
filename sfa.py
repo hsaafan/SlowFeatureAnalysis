@@ -13,6 +13,7 @@ References
 __author__ = "Hussein Saafan"
 
 import numpy as np
+import scipy.linalg as LA
 import scipy.stats as stats
 
 from data_node import Node
@@ -32,10 +33,14 @@ class SFA(Node):
         Has the model been trained yet
     parted: boolean
         Have the slow features been partitioned into slowest and fastest
-    delta: float
-        The time between samples in the data, default is 1
     training_samples: int
         The number of samples the model was trained on
+    Md: int
+        The amount of features that are considered "slow"
+    Me: int
+        The amount of features that are considered "fast"
+    delta: float
+        The time between samples in the data, default is 1
     features: numpy.ndarray
         The learned features from the training data
     slow_features: numpy.ndarray
@@ -46,8 +51,6 @@ class SFA(Node):
         model was partitioned
     transformation_matrix: numpy.ndarray
         The matrix that transforms whitened data into the features
-    standardization_node: Standardization
-        Used to standardize training and online data
     training_data: numpy.ndarray
         The data used to train the model
     standardized_data: numpy.ndarray
@@ -56,26 +59,25 @@ class SFA(Node):
         The singular values of the transformation matrix that were found using
         singular value decompisition. These values are proportional to the
         speeds of the features.
-    Md: int
-        The amount of features that are considered "slow"
-    Me: int
-        The amount of features that are considered "fast"
+    standardization_node: Standardization
+        Used to standardize training and online data
     """
     trained = False
     parted = False
-    delta = 1
-    training_samples = None
+
+    training_samples = 0
+    Md = 0
+    Me = 0
+
+    delta = 1.0
 
     features = None
-
     transformation_matrix = None
-    standardization_node = None
     training_data = None
     standardized_data = None
-
     features_speed = None
-    Md = None
-    Me = None
+
+    standardization_node = None
 
     @property
     def slow_features(self):
@@ -95,17 +97,18 @@ class SFA(Node):
         Parameters
         ----------
         data: numpy.ndarray
-            The data to use for training the model which must be d by n where
-            d is the number of variables and n is the number of samples
+            The data to use for training the model which must be of shape
+            (m, n) where m is the number of variables and n is the number
+            of samples
         dynamic_copies: int
             The amount of lagged copies to add to the data
         expansion_order: int
             The order of nonlinear expansion to perform on the data
         """
         self._check_input_data(data)
-        d = data.shape[0]
+        m = data.shape[0]
         n = data.shape[1]
-        super().__init__(d, dynamic_copies, expansion_order)
+        super().__init__(m, dynamic_copies, expansion_order)
         self.training_samples = n
         self.training_data = self.process_data(data)
 
@@ -118,16 +121,18 @@ class SFA(Node):
     def _transform_training(self):
         """ Transforms whitened data into features and updates the model """
         # Approximate the first order time derivative of the signals
-        Zdot = np.diff(self.standardized_data)/self.delta
-        # SVD of the var-cov matrix of Zdot
-        Zdotcov = np.cov(Zdot)
-        PT, Omega, P = np.linalg.svd(Zdotcov, hermitian=True)
+        Z = self.standardized_data
+        Z_dot = np.diff(Z)/self.delta
+        # SVD of the covariance matrix of whitened difference data
+        cov_Z_dot = np.cov(Z_dot)
+        P, Omega, PT = LA.svd(cov_Z_dot)
         # The loadings are ordered to find the slowest varying features
-        self.features_speed, P = self._order(Omega, P)
+        Omega, P = self._order(Omega, P)
+        self.features_speed = Omega
         # Calculate transformation matrix and features
-        S = self.standardization_node.whitening_matrix
-        self.transformation_matrix = P @ S
-        self.features = P @ self.standardized_data
+        Q = self.standardization_node.whitening_matrix
+        self.transformation_matrix = P.T @ Q.T
+        self.features = P.T @ Z
         return
 
     def _order(self, eigenvalues, eigenvectors):
@@ -147,9 +152,9 @@ class SFA(Node):
         eigenvectors: numpy.ndarray
             2-D array of sorted eigenvectors
         """
-        p = eigenvalues.argsort()
-        eigenvalues = eigenvalues[p]
-        eigenvectors = eigenvectors[p, :]
+        order = eigenvalues.argsort()
+        eigenvalues = eigenvalues[order]
+        eigenvectors = eigenvectors[:, order]
         return(eigenvalues, eigenvectors)
 
     def train(self):
@@ -177,22 +182,22 @@ class SFA(Node):
         if not self.trained:
             raise RuntimeError("Model has not been trained yet")
 
-        x = self.standardization_node.standardize_similar(self.training_data)
+        Z = self.standardization_node.standardize_similar(self.training_data)
+        m = self.num_signals
+        n = self.training_samples
         # Find slowness of input signals
-        xdot = np.diff(x)/self.delta
-        mdot = xdot.shape[0]
-        Ndot = xdot.shape[1]
-        signal_speed = np.zeros(mdot)
-        for i in range(mdot):
-            signal_derivative = xdot[i, :]
-            signal_speed[i] = np.dot(signal_derivative, signal_derivative)/Ndot
+        Z_dot = np.diff(Z)/self.delta
+        signal_speed = np.zeros(m)
+        for i in range(m):
+            signal_derivative = Z_dot[i, :].reshape(-1, 1)
+            signal_speed[i] = (signal_derivative.T @ signal_derivative)/(n-1)
 
         # Find where to partition slow features
         threshold = np.quantile(signal_speed, 1-q, interpolation='lower')
         for i in range(self.features_speed.size):
             if self.features_speed[i] > threshold:
-                self.Me = i
-                self.Md = self.features_speed.size - i
+                self.Md = i
+                self.Me = self.features_speed.size - i
                 break
         self.parted = True
         self.calculate_crit_values()
@@ -238,16 +243,16 @@ class SFA(Node):
         if alpha > 1 or alpha < 0:
             raise ValueError("Confidence level should be between 0 and 1")
         p = 1 - alpha
-        N = self.training_samples
+        n = self.training_samples
         Md = self.Md
         Me = self.Me
-        gd = (Md*(N**2-2*N))/((N-1)*(N-Md-1))
-        ge = (Me*(N**2-2*N))/((N-1)*(N-Me-1))
+        gd = (Md*(n**2-2*n))/((n-1)*(n-Md-1))
+        ge = (Me*(n**2-2*n))/((n-1)*(n-Me-1))
 
         T_d_crit = stats.chi2.ppf(p, Md)
         T_e_crit = stats.chi2.ppf(p, Me)
-        S_d_crit = gd*stats.f.ppf(p, Md, N-Md-1)
-        S_e_crit = ge*stats.f.ppf(p, Me, N-Me-1)
+        S_d_crit = gd*stats.f.ppf(p, Md, n-Md-1)
+        S_e_crit = ge*stats.f.ppf(p, Me, n-Me-1)
 
         return(T_d_crit, T_e_crit, S_d_crit, S_e_crit)
 
@@ -258,7 +263,7 @@ class SFA(Node):
         ----------
         online_data: numpy.ndarray
             The data used for calculating the monitors which must be of shape
-            (d, n) where d is the number of variables (which must match up to
+            (m, n) where m is the number of variables (which must match up to
             the number of variables in the training data) and n is the number
             of test samples (which must be at least 2 more than the amount of
             dynamic copies used for training)
@@ -285,37 +290,41 @@ class SFA(Node):
         features_online = self.transformation_matrix @ centered_data
 
         # Split slow features into fastest and slowest based on training data
-        features_slowest = features_online[:self.Me, :]
-        features_fastest = features_online[self.Me:, :]
+        features_slowest = features_online[:self.Md, :]
+        features_fastest = features_online[self.Md:, :]
         # Calculate time derivatives
         features_slowest_derivative = np.diff(features_slowest)/self.delta
         features_fastest_derivative = np.diff(features_fastest)/self.delta
 
-        N = features_slowest.shape[1]
-        N_dot = features_slowest_derivative.shape[1]
+        n = features_slowest.shape[1]
 
-        T_d = np.zeros((N))
-        T_e = np.zeros((N))
-        S_d = np.zeros((N_dot))
-        S_e = np.zeros((N_dot))
+        T_d = np.zeros((n))
+        T_e = np.zeros((n))
+        S_d = np.zeros((n))
+        S_e = np.zeros((n))
 
-        for i in range(N):
+        for i in range(n):
             sample_slow = features_slowest[:, i]
             sample_fast = features_fastest[:, i]
             T_d[i] = sample_slow.T @ sample_slow
             T_e[i] = sample_fast.T @ sample_fast
 
         Omega = self.features_speed
-        Omega_slow = Omega[:self.Me]
-        Omega_fast = Omega[self.Me:]
+        Omega_slow = Omega[:self.Md]
+        Omega_fast = Omega[self.Md:]
 
         Omega_slow_inv = np.diag(Omega_slow**(-1))
         Omega_fast_inv = np.diag(Omega_fast**(-1))
 
-        for i in range(N_dot):
+        for i in range(n - 1):
             sample_slow = features_slowest_derivative[:, i]
             sample_fast = features_fastest_derivative[:, i]
-            S_d[i] = sample_slow.T @ Omega_slow_inv @ sample_slow
-            S_e[i] = sample_fast.T @ Omega_fast_inv @ sample_fast
+            S_d[i + 1] = sample_slow.T @ Omega_slow_inv @ sample_slow
+            S_e[i + 1] = sample_fast.T @ Omega_fast_inv @ sample_fast
 
-        return(T_d, T_e, S_d, S_e)
+        T_d = T_d.reshape((-1, 1))
+        T_e = T_e.reshape((-1, 1))
+        S_d = S_d.reshape((-1, 1))
+        S_e = S_e.reshape((-1, 1))
+        stats = np.concatenate((T_d, T_e, S_d, S_e), axis=1)
+        return(stats)

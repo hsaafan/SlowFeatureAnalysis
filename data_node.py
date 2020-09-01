@@ -24,46 +24,53 @@ class Node:
 
     Attributes
     ----------
-    _num_variables: int
-        The number of variables per datapoint before processing
-
+    input_signals: int
+        The number of signals per datapoint before processing
+    dynamic_copies: int
+        The number of lagged copies to add to data
+    expansion_order: int
+        The order of nonlinear expansion performed on data
+    num_signals: int
+        The number of signals per datapoint after processing
     """
-    input_variables = None
+    input_signals = None
     dynamic_copies = None
     expansion_order = None
-    output_variables = None
+    num_signals = None
 
-    def __init__(self, initial_num_variables, dynamic_copies, expansion_order):
+    def __init__(self, input_signals, dynamic_copies, expansion_order):
         """ Class constructor
 
         Parameters
         ----------
-        data: numpy.ndarray
-            The first set of data to store in the node for processing
-            must be d by n where d is the number of variables and n is
-            the number of samples
+        input_signals: int
+            The number of signals per datapoint before processing
+        dynamic_copies: int
+            The number of lagged copies to add to data
+        expansion_order: int
+            The order of nonlinear expansion performed on data
         """
-        self._store_input_variables(initial_num_variables)
+        self._store_input_signals(input_signals)
         self._store_dynamic_copies(dynamic_copies)
         self._store_expansion_order(expansion_order)
-        self._store_output_variables()
+        self._store_output_signals()
 
-    def _store_input_variables(self, input_variables):
-        """ Stores the initial number of variables before processing
+    def _store_input_signals(self, input_signals):
+        """ Stores the initial number of signals before processing
 
         Parameters
         ----------
-        input_variables: int
-            Number of input variables before processing
+        input_signals: int
+            Number of input signals before processing
         """
-        if not isinstance(input_variables, int):
-            raise TypeError(f"{type(m)} is not a valid input for input "
-                            "variabes, expected int")
-        elif input_variables < 1:
+        if not isinstance(input_signals, int):
+            raise TypeError(f"{type(input_signals)} is not a valid "
+                            "input for input signals, expected int")
+        elif input_signals < 1:
             raise ValueError("Expected a positive integer input for "
-                             "number of variables")
+                             "number of signals")
         else:
-            self.input_variables = input_variables
+            self.input_signals = input_signals
         return
 
     def _store_dynamic_copies(self, dynamic_copies):
@@ -95,7 +102,7 @@ class Node:
 
         Parameters
         ----------
-        n: int
+        expansion_order: int
             Order of nonlinear expansion
         """
         if expansion_order is None:
@@ -113,21 +120,21 @@ class Node:
             raise TypeError("Expansion order must be an integer")
         return
 
-    def _store_output_variables(self):
+    def _store_output_signals(self):
         """ Calculates and stores the ouput dimension """
-        m = self.input_variables
+        m = self.input_signals
         d = self.dynamic_copies
         n = self.expansion_order
         # From dynamization
-        num_dyn_vars = m*(d + 1)
+        m = m*(d + 1)
         # From expansion
         # Order 1
-        output_vars = num_dyn_vars
+        num_signals = m
         for r in range(2, n+1):
             # Order 2 -> expansion_order
-            output_vars += (factorial(r + num_dyn_vars - 1)
-                            / (factorial(r) * (factorial(num_dyn_vars - 1))))
-        self.output_variables = int(output_vars)
+            num_signals += (factorial(r + m - 1)
+                            / (factorial(r) * (factorial(m - 1))))
+        self.num_signals = int(num_signals)
         return
 
     def _check_input_data(self, data):
@@ -145,17 +152,17 @@ class Node:
             raise RuntimeError("Array input should be two dimensional, "
                                f"current dimensions are: {data.shape}")
         else:
-            data_vars = data.shape[0]
+            data_signals = data.shape[0]
             data_samples = data.shape[1]
 
-        if self.input_variables is not None:
-            if data_vars != self.input_variables:
+        if self.input_signals is not None:
+            if data_signals != self.input_signals:
                 raise RuntimeError("Variables do not match existing data")
 
-        if data_vars > data_samples and data_samples != 1:
+        if data_signals > data_samples and data_samples != 1:
             warnings.warn("There are more variables than samples: "
                           "Check that the data has been entered "
-                          "correctly with column samples and variable rows",
+                          "correctly with column samples and signal rows",
                           RuntimeWarning)
         return
 
@@ -195,7 +202,7 @@ class Node:
 
         For a set of signals [x1, x2, ... xn], performs a nonlinear expansion
         and returns [x1, x2, ..., xn, x1*x1, x1*x2, ... xn*xn, ... x1*x2*...
-        *xd, ... xn^d] where d is the expansion order.
+        *xd, ... xn^k] where k is the expansion order.
 
         Parameters
         ----------
@@ -215,7 +222,7 @@ class Node:
             m = data.shape[0]
             n = data.shape[1]
 
-            data_exp = np.empty((self.output_variables, n))
+            data_exp = np.empty((self.num_signals, n))
 
             # Add expanded signals
             # Order 1
@@ -260,7 +267,7 @@ class IncrementalNode(Node):
     """ Incremental data processing
 
     Extends Node for incremental data. This class processes data one sample
-    at a time. Data input must be d by 1 where d is the number of variables.
+    at a time. Data input must be m by 1 where m is the number of variables.
 
     Attributes
     ----------
@@ -274,7 +281,7 @@ class IncrementalNode(Node):
 
         Append prev_samples to sample and update prev_samples. If prev_sample
         hasn't stored enough samples yet to fully dynamize, returns a signal
-        with filled with zeros.
+        filled with zeros.
 
         Parameters
         ----------
@@ -287,7 +294,7 @@ class IncrementalNode(Node):
             The new sample with the lagged samples added
         """
         d = self.dynamic_copies
-        m = self.input_variables
+        m = self.input_signals
 
         if d == 0:
             sample_dyn = sample
@@ -306,7 +313,7 @@ class IncrementalNode(Node):
 
         For a set of variables [x1, x2, ... xn], performs a nonlinear expansion
         and returns [x1, x2, ..., xn, x1*x1, x1*x2, ... xn*xn, ... x1*x2*...
-        *xd, ... xn^d] where d is the expansion order.
+        *xd, ... xn^k] where k is the expansion order.
 
         Parameters
         ----------
@@ -323,7 +330,7 @@ class IncrementalNode(Node):
         if expansion_order == 1:
             sample_exp = sample
         else:
-            sample_exp = np.empty((self.output_variables, 1))
+            sample_exp = np.empty((self.num_signals, 1))
             # Add expanded signals
             # Order 1
             m = sample.shape[0]
@@ -351,7 +358,7 @@ class IncrementalNode(Node):
         Parameters
         ----------
         raw_sample: numpy.ndarray
-            The sample to process of shape (input_variables, 1)
+            The sample to process of shape (m, 1)
 
         Returns
         -------

@@ -59,8 +59,8 @@ class Standardization(Node):
         ----------
         data: numpy.ndarray
             The data to use for generating the whitening matrix and offset
-            which must be d by n where d is the number of variables and n is
-            the number of samples
+            which must be of shape (m, n) where m is the number of variables
+            and n is the number of samples
         """
         self._check_input_data(data)
         self.training_data = data
@@ -78,7 +78,7 @@ class Standardization(Node):
         centered_data: numpy.ndarray
             Data with zero mean for all variables
         """
-        data_means = data.mean(axis=1).reshape((data.shape[0], 1))
+        data_means = data.mean(axis=1).reshape((-1, 1))
         self.offset = data_means
         centered_data = data - self.offset
         return(centered_data)
@@ -99,13 +99,13 @@ class Standardization(Node):
         whitened_data: numpy.ndarray
             Data with identity variance matrix
         """
-        Sigma = np.cov(data)
-        U, Lambda, UT = np.linalg.svd(Sigma, hermitian=True)
+        cov_X = np.cov(data)
+        U, Lambda, UT = LA.svd(cov_X)
 
         # Calculate the whitening matrix
-        Q = np.diag(Lambda**-(1/2)) @ UT
+        Q = U @ np.diag(Lambda**-(1/2))
         self.whitening_matrix = Q
-        whitened_data = Q @ data
+        whitened_data = Q.T @ data
 
         return(whitened_data)
 
@@ -149,7 +149,8 @@ class Standardization(Node):
         -------
         whitened_data: numpy.ndarray
         """
-        whitened_data = self.whitening_matrix @ data
+        Q = self.whitening_matrix
+        whitened_data = Q.T @ data
         return(whitened_data)
 
     def standardize_similar(self, data):
@@ -202,7 +203,7 @@ class IncrementalStandardization(Node):
         ----------
         first_sample: numpy.ndarray
             The first sample to initialize the object based off of which must
-            be of shape (d, 1) where d is the number of variables
+            be of shape (m, 1) where m is the number of variables
         num_components: int
             The number of principal components to keep for whitening. The more
             components kept, the longer it will take for convergance.
@@ -212,8 +213,8 @@ class IncrementalStandardization(Node):
         self._store_num_components(num_components)
 
         # Initialize eigensystem
-        d = first_sample.shape[0]
-        self.eigensystem = np.eye(d, self.num_components)
+        m = first_sample.shape[0]
+        self.eigensystem = np.eye(m, self.num_components)
         self._count = 0
 
     def _store_num_components(self, num_components):
@@ -225,8 +226,8 @@ class IncrementalStandardization(Node):
             Number of principal components to keep for whitening
         """
         if not isinstance(num_components, int):
-            raise TypeError(f"{type(m)} is not a valid input for "
-                            "num_components , expected int")
+            raise TypeError(f"{type(num_components)} is not a valid type for "
+                            "number of principal components, expected int")
         elif num_components < 1:
             raise ValueError("Expected a positive integer input for "
                              "number of principal components")
@@ -283,31 +284,6 @@ class IncrementalStandardization(Node):
         Transactions on Pattern Analysis and Machine Intelligence, 25(8),
         1034–1040. <https://doi.org/10.1109/tpami.2003.1217609>
         """
-        # max_iter = int(np.min([self.num_components, self._count + 1]))
-        # u = sample.reshape((-1, 1))
-        # u_orig = np.copy(u)
-        # resid_sum = np.zeros_like(u)
-        # for i in range(max_iter):
-        #     u = u_orig - resid_sum
-        #     if i == self._count:
-        #         eigensystem[:, i] = u.flat
-        #     else:
-        #         # Get previous estimate of v
-        #         v_prev = eigensystem[:, i].reshape((-1, 1))
-        #         v_prev_norm = LA.norm(v_prev) + eps
-
-        #         # Get new estimate of v
-        #         historical = (1 - eta) * v_prev
-        #         projection = (u_orig.T @ v_prev) / v_prev_norm
-        #         update = eta * u * projection
-        #         v_new = historical + update
-
-        #         # Store new estimate
-        #         eigensystem[:, i] = v_new.flat
-
-        #         # Update sum from projections
-        #         v_norm = LA.norm(v_new) + eps
-        #         resid_sum += ((u_orig.T @ v_new) * v_new)/(v_norm ** 2)
         u = sample.reshape((-1, 1))
         for i in range(self.num_components):
             v_prev = eigensystem[:, i].reshape((-1, 1))
@@ -317,23 +293,20 @@ class IncrementalStandardization(Node):
             v_norm = LA.norm(v_new) + eps
             u = u - (u.T @ v_new) * v_new / (v_norm ** 2)
             eigensystem[:, i] = v_new.flat
-        # eigensystem = FDPM(eigensystem, sample, minor=False, mu_bar=0.99)
 
         return(eigensystem)
 
-    def _get_whitening_matrix(self, eigensystem, zca_whitening=False):
+    def _get_whitening_matrix(self, eigensystem):
         """ Calculate the whitening matrix
 
         Parameters
         ----------
         eigensystem: numpy.ndarray
             The current eigensystem estimate
-        zca_whitening: boolean (default: False)
-            Use ZCA whitening matrix instead of PCA
 
         Returns
         -------
-        whitening_matrix: numpy.ndarray
+        Q: numpy.ndarray
             The whitening matrix estimate
         """
         D = np.zeros((self.num_components))
@@ -345,12 +318,9 @@ class IncrementalStandardization(Node):
             D[i] = eigenvalue ** (-1/2)
 
         # Calculate the whitening matrix
-        S = U @ np.diag(D)
-        if zca_whitening:
-            S = S @ U.T
-        whitening_matrix = S.T
+        Q = U @ np.diag(D)
 
-        return(whitening_matrix)
+        return(Q)
 
     def _whiten(self, sample, eta):
         """ Update the model and whiten the current sample
@@ -370,7 +340,7 @@ class IncrementalStandardization(Node):
         """
         self.eigensystem = self._CCIPA(self.eigensystem, sample, eta)
         self.whitening_matrix = self._get_whitening_matrix(self.eigensystem)
-        whitened_sample = self.whitening_matrix @ sample
+        whitened_sample = self.whitening_matrix.T @ sample
         return(whitened_sample)
 
     def standardize_online(self, sample, eta=0.01):
@@ -443,7 +413,7 @@ class IncrementalStandardization(Node):
         -------
         whitened_sample: numpy.ndarray
         """
-        whitened_sample = self.whitening_matrix @ sample
+        whitened_sample = self.whitening_matrix.T @ sample
         return(whitened_sample)
 
     def standardize_similar(self, sample):
@@ -467,15 +437,13 @@ class IncrementalStandardization(Node):
         return(standardized_sample)
 
 
-class RecursiveStandardization(Node):
+class RecursiveStandardization(IncrementalStandardization):
     """ Recursive data centering and whitening
 
     Attributes
     ----------
     offset: numpy.ndarray
         The average of the signals across all samples
-    offset_delta: numpy.ndarray
-        The derivative of the average
     covariance: numpy.ndarray
         The estimated covariance matrix of the input data
     whitening_matrix: numpy.ndarray
@@ -488,9 +456,9 @@ class RecursiveStandardization(Node):
            (5), 471–486. <https://doi.org/10.1016/s0959-1524(00)00022-6>
     """
     offset = None
-    offset_delta = None
     covariance = None
     whitening_matrix = None
+    _count = None
 
     def __init__(self, first_sample):
         """ Class constructor
@@ -505,31 +473,9 @@ class RecursiveStandardization(Node):
         """
         self._check_input_data(first_sample)
         self.offset = np.zeros_like(first_sample)
-        self.offset_delta = np.zeros_like(first_sample)
         d = first_sample.shape[0]
         self.covariance = np.zeros((d, d))
-
-    def _center(self, sample, eta):
-        """ Center a sample and update the offset and its derivative
-
-        Parameters
-        ----------
-        sample: numpy.ndarray
-            The sample used for learning the offset
-        eta: float
-            The learning rate
-
-        Returns
-        -------
-        centered_sample: numpy.ndarray
-            Sample minus the learned offset
-        """
-        prev_offset = np.copy(self.offset)
-        self.offset = (1 - eta) * self.offset + eta * sample
-        self.offset_delta = self.offset - prev_offset
-        centered_sample = sample - self.offset
-
-        return(centered_sample)
+        self._count = 0
 
     def _update_sample_cov(self, sample, eta):
         """ Update the covariance matrix estimate
@@ -541,12 +487,6 @@ class RecursiveStandardization(Node):
         eta: float
             The learning rate
         """
-        '''
-        prev_cov = self.covariance
-        recenter = self.offset_delta @ self.offset_delta.T
-        new_cov = eta * (prev_cov + recenter) + (1 - eta) * (sample @ sample.T)
-        self.covariance = new_cov
-        '''
         self.covariance = (1 - eta) * self.covariance + eta * sample @ sample.T
         return
 
@@ -566,81 +506,8 @@ class RecursiveStandardization(Node):
             Sample that has been transformed by the current whitening matrix
             estimate
         """
+        self._update_sample_cov(sample, eta)
         U, L, UT = LA.svd(self.covariance)
         self.whitening_matrix = U @ np.diag(L ** (-1/2))
-        self.whitening_eigenvals = L
         whitened_sample = self.whitening_matrix.T @ sample
         return(whitened_sample)
-
-    def standardize_online(self, sample, eta=0.01):
-        """ Updates the model and returns the standardized sample
-
-        Parameters
-        ----------
-        sample: numpy.ndarray
-            The sample to update the model with
-        eta: float
-            The learning rate
-
-        Returns
-        -------
-        standardized_sample: numpy.ndarray
-            Sample that has been centered and transformed by the current
-            whitening matrix estimate
-        """
-        self._check_input_data(sample)
-        centered_sample = self._center(sample, eta)
-        self._update_sample_cov(centered_sample, eta)
-        standardized_sample = self._whiten(centered_sample, eta)
-        return(standardized_sample)
-
-    def center_similar(self, sample):
-        """ Center sample using the learned offset
-
-        Parameters
-        ----------
-        sample: numpy.ndarray
-            The sample to be centered
-
-        Returns
-        -------
-        centered_sample: numpy.ndarray
-            Sample minus the offset
-        """
-        centered_sample = sample - self.offset
-        return(centered_sample)
-
-    def whiten_similar(self, sample):
-        """ Whiten sample using learned whitening transform
-
-        Parameters
-        ----------
-        sample: numpy.ndarray
-            The sample to be whitened
-
-        Returns
-        -------
-        whitened_sample: numpy.ndarray
-        """
-        whitened_sample = self.whitening_matrix @ sample
-        return(whitened_sample)
-
-    def standardize_similar(self, sample):
-        """ standardized sample using learned model
-
-        The model isn't updated when this method is used
-
-        Parameters
-        ----------
-        sample: numpy.ndarray
-            The sample to be whitened
-
-        Returns
-        -------
-        standardized_sample: numpy.ndarray
-            Sample that has been centered and whitened
-        """
-        self._check_input_data(sample)
-        centered_sample = self.center_similar(sample)
-        standardized_sample = self.whiten_similar(centered_sample)
-        return(standardized_sample)
