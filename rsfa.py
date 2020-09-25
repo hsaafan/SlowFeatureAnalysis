@@ -121,6 +121,7 @@ class RSFA(IncrementalNode):
 
         K = num_components
         J = num_features
+        m = self.num_signals
 
         self.num_components = K
         self.num_features = J
@@ -128,7 +129,7 @@ class RSFA(IncrementalNode):
         self.conv_tol = conv_tol
         self.transformation_matrix = np.eye(K, J)
         self.features_speed = np.zeros(J)
-        self.covariance_delta = np.zeros((K, K))
+        self.covariance_delta = np.zeros((m, m))
 
         self.update_after_converge = False
 
@@ -200,7 +201,7 @@ class RSFA(IncrementalNode):
             P = self.transformation_matrix
             S = np.eye(self.num_features) - (Q.T @ cov_delta @ Q) / gam
             P, _ = LA.qr(S @ P)
-        self._check_convergence(self.transformation_matrix, P)
+        # self._check_convergence(self.transformation_matrix, P)
         return(P)
 
     def _check_convergence(self, P_prev, P, ignore_resid=True):
@@ -281,8 +282,11 @@ class RSFA(IncrementalNode):
         features_slow_delta = y_dot[:Md].reshape(-1, 1)
         features_fast_delta = y_dot[Md:].reshape(-1, 1)
 
-        S_d = features_slow_delta.T @ features_slow_delta
-        S_e = features_fast_delta.T @ features_fast_delta
+        speed_slow = (Omega[:Md]).reshape((-1))
+        speed_fast = (Omega[Md:]).reshape((-1))
+
+        S_d = features_slow_delta.T @ np.diag(speed_slow**-1) @ features_slow_delta
+        S_e = features_fast_delta.T @ np.diag(speed_fast**-1) @ features_fast_delta
 
         stats = [T_d, T_e, S_d, S_e]
         stats_crit = [T_d_crit, T_e_crit, Q_d_crit, Q_e_crit]
@@ -364,7 +368,7 @@ class RSFA(IncrementalNode):
             x_prev = np.copy(self.centered_sample)
         else:
             # On first pass through, create the standardization object
-            node = RecursiveStandardization(sample)
+            node = RecursiveStandardization(sample, self.num_components)
             self.standardization_node = node
 
         """ Centering and updating whitening matrix """

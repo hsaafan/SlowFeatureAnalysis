@@ -7,12 +7,15 @@ import tep_import as imp
 if __name__ == "__main__":
     X, T0, T4, T5, T10 = imp.import_tep_sets()
 
+    plt.rcParams.update({'font.size': 16})
+    plt.subplots_adjust(0.17, 0.05, 0.95, 0.95, 0, 0.05)
     """ IDV(4) """
     T4_reactor_temp = T4[8, :]
     reactor_temp_setpoint = 120.4 * np.ones_like(T4_reactor_temp)
     T4_rector_cooling_water_flow = T4[31, :]
 
     plt.figure("IDV(4)")
+    plt.subplots_adjust(hspace=0.4)
 
     plt.subplot(2, 1, 1)
     plt.title("Reactor Cooling Water Flow")
@@ -33,6 +36,7 @@ if __name__ == "__main__":
     reactor_pressure_setpoint = 2705*np.ones_like(T5_reactor_pressure)
 
     plt.figure("IDV(5)")
+    plt.subplots_adjust(hspace=0.4)
 
     plt.subplot(2, 1, 1)
     plt.title("Condenser Cooling Water Flow")
@@ -53,6 +57,7 @@ if __name__ == "__main__":
     stripper_temp_setpoint = 65.731*np.ones_like(T10_stripper_temp)
 
     plt.figure("IDV(10)")
+    plt.subplots_adjust(hspace=0.4)
 
     plt.subplot(2, 1, 1)
     plt.title("A and C Feed Flow")

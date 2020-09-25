@@ -334,7 +334,7 @@ class IncrementalNode(Node):
             # Add expanded signals
             # Order 1
             m = sample.shape[0]
-            sample_exp[0:m] = sample
+            sample_exp[0:m] = sample.reshape((-1, 1))
 
             pos = m  # Where to add new signal
             for order in range(2, expansion_order + 1):

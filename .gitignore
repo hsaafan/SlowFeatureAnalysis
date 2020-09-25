@@ -7,3 +7,4 @@ TE_process
 *.png
 mca.py
 pca.py
+*.txt

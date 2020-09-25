@@ -61,9 +61,6 @@ class IncSFA(IncrementalNode):
         The current sample that has been standardized
     feature_sample: numpy.ndarray
         The current feature output
-    _v_gam: numpy.ndarray
-        The first principal component in whitened difference space. Used as an
-        input for the minor component analysis algorithm
     features_speed: numpy.ndarray
         The estimated singular values of the transformation matrix. These
         values are proportional to the speeds of the features
@@ -88,7 +85,6 @@ class IncSFA(IncrementalNode):
     transformation_matrix = None
     standardized_sample = None
     feature_sample = None
-    _v_gam = None
     features_speed = None
 
     standardization_node = None
@@ -130,7 +126,6 @@ class IncSFA(IncrementalNode):
         self.L = L
         self.conv_tol = conv_tol
         self.transformation_matrix = np.eye(K, J)
-        self._v_gam = np.random.randn(K, 1)
         self.features_speed = np.zeros(J)
 
     def _CIMCA_update(self, P, z_dot, gamma, eta):
@@ -162,31 +157,22 @@ class IncSFA(IncrementalNode):
         from High-Dimensional Input Streams. Neural Computation, 24(11),
         2994–3024. <https://doi.org/10.1162/neco_a_00344>
         """
-        P_prev = np.copy(P)
         K = self.num_components
         J = self.num_features
         x = z_dot.reshape((-1, 1))
         L = np.zeros((K, 1))
+        lower_sum = np.zeros((K, 1))
         for i in range(J):
-            lower_sum = np.zeros((K, 1))
             p_prev = P[:, i].reshape((-1, 1))
-            for j in range(i):
-                pj = P[:, j].reshape((-1, 1))
-                lower_sum += (pj.T @ p_prev) * pj
-            L = gamma * lower_sum
+            coefficients = P[:, :i].T @ p_prev
+            if i > 0:
+                lower_sum = np.sum(np.multiply(P[:, :i], coefficients.T),axis=1)
+            L = (gamma * lower_sum).reshape((K, 1))
 
-            px = x.T @ p_prev
-            pl = p_prev.T @ L
-            a = (p_prev.T @ p_prev + eps) ** -2
-            b = px ** 2
-            delta = px * x + L - a*b*p_prev - a*pl*p_prev
-            p_new = p_prev - eta * delta
+            p_new = (1-eta) * p_prev - eta*((z_dot.T @ p_prev)*z_dot + L)
             p_norm = LA.norm(p_new) + eps
             p_new = p_new / p_norm
             P[:, i] = p_new.flat
-        if self.time > 100:
-            # Slight delay to prevent premature convergence
-            self._check_convergence(P_prev, P)
         return(P)
 
     def _check_convergence(self, P_prev, P, ignore_resid=True):
@@ -286,7 +272,7 @@ class IncSFA(IncrementalNode):
         else:
             # On first pass through, create the norm object
             if use_svd_whitening:
-                node = RecursiveStandardization(sample)
+                node = RecursiveStandardization(sample, self.num_components)
                 self.standardization_node = node
             else:
                 node = IncrementalStandardization(sample, self.num_components)
@@ -299,12 +285,7 @@ class IncSFA(IncrementalNode):
         if self.time > 0:
             z_dot = (z - z_prev)/self.delta
             # Update first PC in whitened difference space and gamma
-            """ Derivative centering and first eigenvector output """
-            if self.time == 1:
-                self.ccipa_object = IncrementalStandardization(z_dot, 1)
-            self._v_gam = self.ccipa_object.update_CCIPA(z_dot, eta)
-            gam = LA.norm(self._v_gam) + eps
-
+            gam = 4
             """ Update feature transform matrix """
             P = self._CIMCA_update(self.transformation_matrix, z_dot, gam, eta)
             self.transformation_matrix = P
@@ -466,6 +447,12 @@ class IncSFA(IncrementalNode):
         """
         y = y.reshape((-1))
         y_dot = y_dot.reshape((-1))
+
+        # Order slow features in order of increasing speed
+        order = Omega.argsort()
+        Omega = Omega[order]
+        y = y[order]
+        y_dot = y_dot[order]
 
         # Split features, derivatives, and speeds into slowest and fastest
         y_slow = y[:self.Md].reshape((-1, 1))

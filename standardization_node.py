@@ -291,7 +291,7 @@ class IncrementalStandardization(Node):
             projection = (u.T @ v_prev) / v_norm
             v_new = (1 - eta) * v_prev + eta * projection * u
             v_norm = LA.norm(v_new) + eps
-            u = u - (u.T @ v_new) * v_new / (v_norm ** 2)
+            u = u - (u.T @ (v_new / v_norm)) * (v_new / v_norm)
             eigensystem[:, i] = v_new.flat
 
         return(eigensystem)
@@ -460,7 +460,7 @@ class RecursiveStandardization(IncrementalStandardization):
     whitening_matrix = None
     _count = None
 
-    def __init__(self, first_sample):
+    def __init__(self, first_sample, num_components):
         """ Class constructor
 
         Initializes object based on first sample passed through
@@ -473,8 +473,10 @@ class RecursiveStandardization(IncrementalStandardization):
         """
         self._check_input_data(first_sample)
         self.offset = np.zeros_like(first_sample)
-        d = first_sample.shape[0]
-        self.covariance = np.zeros((d, d))
+        self._store_num_components(num_components)
+
+        m = first_sample.shape[0]
+        self.covariance = np.zeros((m, m))
         self._count = 0
 
     def _update_sample_cov(self, sample, eta):
@@ -509,5 +511,6 @@ class RecursiveStandardization(IncrementalStandardization):
         self._update_sample_cov(sample, eta)
         U, L, UT = LA.svd(self.covariance)
         self.whitening_matrix = U @ np.diag(L ** (-1/2))
+        self.whitening_matrix = self.whitening_matrix[:, :self.num_components]
         whitened_sample = self.whitening_matrix.T @ sample
         return(whitened_sample)

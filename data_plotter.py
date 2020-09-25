@@ -145,12 +145,12 @@ class SFAPlotter:
         titles = ["$T^2$", "$T_e^2$", "$S^2$", "$S_e^2$"]
         for i in range(4):
             plt.subplot(4, 1, i+1)
-            plt.title(titles[i])
+            plt.ylabel(titles[i])
             plt.xlabel("Sample")
             plt.plot(stats[i, 3:])
             if stats_crit is not None:
-                plt.plot(stats_crit[i, 3:])
-        _s.set_size_inches(16, 9)
+                plt.plot(stats_crit[i, 3:], linestyle='--')
+        _s.set_size_inches(8, 6)
         if self.show:
             plt.show()
         if self.save:
