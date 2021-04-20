@@ -28,28 +28,38 @@ def profile_algos(d=2):
     rsfa_time = timeit.default_timer() - start_rsfa
 
     start_incsfa = timeit.default_timer()
-    main.run_incsfa(dynamic_copies=d)
+    main.run_incsfa(dynamic_copies=d, use_SVD=False)
     incsfa_time = timeit.default_timer() - start_incsfa
 
-    return(incsfa_time, rsfa_time)
+    start_incsfa_svd = timeit.default_timer()
+    main.run_incsfa(dynamic_copies=d, use_SVD=True)
+    incsfa_time_svd = timeit.default_timer() - start_incsfa_svd
 
-if __name__ == "__main__":
-    d = np.arange(start=2, stop=11, step=1, dtype=int)
-    rsfa_times = np.zeros_like(d, dtype=float)
-    incsfa_times = np.zeros_like(d, dtype=float)
-    for ind, val in enumerate(d):
-        val = int(val)
-        print(f"Profiling for {val} lagged copies")
-        incsfa_times[ind], rsfa_times[ind] = profile_algos(val)
-        gc.collect()
-    plt.figure()
-    d = d*33 + 33
+    return(incsfa_time, rsfa_time, incsfa_time_svd)
+
+def plot_profile(d, time_array):
     plt.rcParams.update({'font.size': 16})
     plt.subplots_adjust(0.17, 0.05, 0.95, 0.95, 0, 0.05)
-    plt.scatter(d, rsfa_times, label="RSFA")
-    plt.scatter(d, incsfa_times, label="IncSFA")
+    for name, time in time_array:
+        plt.scatter(d, time, label=name)
     plt.title("Training Time")
     plt.xlabel("Sample Size")
     plt.ylabel("Time (s)")
     plt.legend()
     plt.show()
+
+if __name__ == "__main__":
+    d = np.arange(start=2, stop=17, step=1, dtype=int)
+    rsfa_times = np.zeros_like(d, dtype=float)
+    incsfa_times = np.zeros_like(d, dtype=float)
+    incsfa_times_svd = np.zeros_like(d, dtype=float)
+    for ind, val in enumerate(d):
+        val = int(val)
+        print(f"Profiling for {val} lagged copies")
+        incsfa_times[ind], rsfa_times[ind], incsfa_times_svd[ind] = profile_algos(val)
+        gc.collect()
+    plt.figure()
+    d = d*33 + 33
+    np.save('rsfa_times.npy', rsfa_times)
+    np.save('incsfa_times.npy', incsfa_times)
+    np.save('incsfa_svd_times.npy', incsfa_times_svd)

@@ -73,7 +73,7 @@ def run_sfa(dynamic_copies=2, expansion_order=1, cut_off=55):
 def run_incsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
                num_whitened_signals=99, num_features=99,
                sample_weight_parameter=2, conv_tol=0, epochs=1,
-               plot_last_epoch=True):
+               plot_last_epoch=True, use_SVD=True):
     """ Incremental Slow Feature Analysis
 
     Runs the incremental slow feature analysis algorithm on the Tennessee
@@ -140,7 +140,8 @@ def run_incsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
         print("Running epoch " + str(j+1) + "/" + str(epochs))
         for i in range(X.shape[1]):
             pos = j*X.shape[1]+i
-            run = SlowFeature.add_data(X[:, i])
+            run = SlowFeature.add_data(X[:, i],
+                                       use_svd_whitening=use_SVD)
             # Store data
             Y[:, pos] = run[0].flat
             stats[:, pos] = run[1]
