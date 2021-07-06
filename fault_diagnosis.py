@@ -41,25 +41,33 @@ def rRBC_index(M: np.ndarray, x: np.ndarray, xi_i: np.ndarray, S: np.ndarray):
 
 
 def CDC_limit(M: np.ndarray, xi_i: np.ndarray, S: np.ndarray, alpha: float):
-    chi2 = stats.chi2.ppf(alpha, 1)
-    return(chi2 * xi_i.T @ S @ M @ xi_i)
+    static = xi_i.T @ S @ M @ xi_i
+    upper = stats.chi2.ppf(1 - alpha, 1) * static
+    lower = stats.chi2.ppf(alpha, 1) * static
+    return(lower, upper)
 
 
 def PDC_limit(M: np.ndarray, xi_i: np.ndarray, S: np.ndarray, alpha: float):
     stdv = ((xi_i.T @ S @ M @ xi_i) ** 2
             + xi_i.T @ S @ M @ M @ xi_i @ xi_i.T @ S @ xi_i) ** 0.5
-    # TODO: whats with the +- in the paper?, I'm just using + here
-    return(xi_i.T @ S @ M @ xi_i + 3 * stdv)
+    static = xi_i.T @ S @ M @ xi_i
+    upper = static + 3 * stdv
+    lower = static - 3 * stdv
+    return(lower, upper)
 
 
 def DC_limit(M: np.ndarray, xi_i: np.ndarray, S: np.ndarray, alpha: float):
-    chi2 = stats.chi2.ppf(alpha, 1)
-    return(chi2 * xi_i.T @ S @ xi_i @ xi_i.T @ M @ xi_i)
+    static = xi_i.T @ S @ xi_i @ xi_i.T @ M @ xi_i
+    upper = stats.chi2.ppf(1 - alpha, 1) * static
+    lower = stats.chi2.ppf(alpha, 1) * static
+    return(lower, upper)
 
 
 def RBC_limit(M: np.ndarray, xi_i: np.ndarray, S: np.ndarray, alpha: float):
-    chi2 = stats.chi2.ppf(alpha, 1)
-    return(chi2 * xi_i.T @ M @ S @ M @ xi_i / (xi_i.T @ M @ xi_i))
+    static = xi_i.T @ M @ S @ M @ xi_i / (xi_i.T @ M @ xi_i)
+    upper = stats.chi2.ppf(1 - alpha, 1) * static
+    lower = stats.chi2.ppf(alpha, 1) * static
+    return(lower, upper)
 
 
 INDEX_FUNCTIONS = {
@@ -139,11 +147,12 @@ def contribution_control_limits(M: np.ndarray, S: np.ndarray, alpha: float,
     index_values = dict()
 
     for ind in indices:
-        vals = [0] * n
+        upper = [0] * n
+        lower = [0] * n
         for i in range(n):
             xi_i = xi(n, i)
-            vals[i] = LIMIT_FUCNTIONS[ind](M, xi_i, S, alpha)
-        index_values[ind] = vals
+            lower[i], upper[i] = LIMIT_FUCNTIONS[ind](M, xi_i, S, alpha)
+        index_values[ind] = (lower, upper)
     return(index_values)
 
 
@@ -184,10 +193,7 @@ def check_control_limit_inputs(M, S):
     return(M, S)
 
 
-if __name__ == "__main__":
-    num_samples = 3000
-    num_faults = 2000
-    num_vars = 6
+def example_process_model(num_samples):
     A = [
         [-0.3441, 0.4815, 0.6637],
         [-0.2313, -0.5936, 0.3545],
@@ -197,6 +203,7 @@ if __name__ == "__main__":
         [-0.3877, -0.3868, -0.2045]
     ]
     A = np.asarray(A)
+    num_vars = 6
 
     # Generate inputs t
     t1 = 2.0 * stats.uniform.rvs(size=num_samples)
@@ -210,25 +217,27 @@ if __name__ == "__main__":
         noise[i] = stats.norm.rvs(size=num_samples, scale=0.2)
     noise = np.asarray(noise)
 
-    # Generate faults
-    fault_indices = random.sample(range(num_samples), num_faults)
-    faults = np.zeros((num_vars, num_samples))
-
-    for fault_sample in fault_indices:
-        fault_var = random.sample(range(num_vars), 1)[0]
-        faults[fault_var, fault_sample] = 5.0 * stats.uniform.rvs()
-
     # Create samples
-    X = np.zeros((num_vars, num_samples))
-    for i in range(num_samples):
-        X = A @ t + noise + faults
+    X = A @ t + noise
+
+    return(X)
+
+
+if __name__ == "__main__":
+    num_samples = 3000
+    num_faults = 2000
+    num_vars = 6
+
+    X = example_process_model(num_samples)
 
     """ PCA Model """
     # Shift to 0 mean
-    X = X - np.mean(X, 1).reshape((-1, 1))
+    xmean = np.mean(X, 1).reshape((-1, 1))
+    X = X - xmean
 
     # Scale to unit variance
-    X = X / np.std(X, 1).reshape((-1, 1))
+    xstd = np.std(X, 1).reshape((-1, 1))
+    X = X / xstd
 
     assert np.allclose(np.mean(X, 1), 0)
     assert np.allclose(np.std(X, 1), 1)
@@ -243,36 +252,39 @@ if __name__ == "__main__":
     # cum_eig = np.cumsum(Lam) / np.sum(Lam)
     # plt.plot(cum_eig)
     # plt.show()
-    principal_vectors = 5
-    # Confidence = (1 - alpha) x 100%
-    alpha = 0.05
+    principal_vectors = 3
+    alpha = 0.01  # Confidence = (1 - alpha) x 100%
 
     P_resid = P[:, principal_vectors:]
     Lam_resid = Lam[principal_vectors:]
     P = P[:, :principal_vectors]
     Lam = Lam[:principal_vectors]
+    D = P @ np.diag(Lam ** -1) @ P.T
 
-    D = P[:, :principal_vectors] @ np.diag(Lam ** -1) @ P.T
-    T_sqr = [0] * num_samples
-    for i in range(num_samples):
-        T_sqr[i] = X[:, i].T @ D @ X[:, i]
+    # Generate faults
+    faults = np.zeros((num_vars, num_faults))
 
-    T_sqr_limit = [stats.chi2.ppf(alpha, principal_vectors)] * num_samples
+    for fault_sample in range(num_faults):
+        fault_var = random.sample(range(num_vars), 1)[0]
+        faults[fault_var, fault_sample] = 5.0 * stats.uniform.rvs()
+
+    X_faulty = example_process_model(num_faults) + faults
+    X_faulty = (X_faulty - xmean) / xstd
+
+    T_sqr = [0] * num_faults
+    for i in range(num_faults):
+        T_sqr[i] = X_faulty[:, i].T @ D @ X_faulty[:, i]
+
+    T_sqr_limit = [stats.chi2.ppf(1 - alpha, principal_vectors)] * num_faults
 
     detected_faults = []
-    false_alarms = []
 
-    for i in range(num_samples):
+    for i in range(num_faults):
         if T_sqr[i] > T_sqr_limit[i]:
-            if i in fault_indices:
-                detected_faults.append(i)
-            else:
-                false_alarms.append(i)
+            detected_faults.append(i)
 
     fault_detect_rate = len(detected_faults) / num_faults * 100
-    false_alarm_rate = len(false_alarms) / num_samples * 100
     print(f"T^2 Detected Faults: {fault_detect_rate:.2f} %")
-    print(f"T^2 False Alarm Rate: {false_alarm_rate:.2f} %")
     # plt.plot(T_sqr, label="\$T^2\$")
     # plt.plot(T_sqr_limit, label="Limit")
     # plt.legend()
@@ -280,22 +292,31 @@ if __name__ == "__main__":
     all_indices = list(INDEX_FUNCTIONS.keys())
     cont_rates = dict()
     for ind in all_indices:
-        # Tracks number of correct diagnoses and false diagnoses
-        cont_rates[ind] = [0, 0]
+        # Tracks number of correct diagnoses, false diagnoses, and missed
+        # diagnoses
+        cont_rates[ind] = [0, 0, 0]
 
+    limits = contribution_control_limits(D, S, alpha, all_indices)
     for i in detected_faults:
-        cont = contribution_index(D, X[:, i], all_indices)
-        limits = contribution_control_limits(D, S, 1 - alpha, all_indices)
+        # Get index and limit for each fault sample
+        cont = contribution_index(D, X_faulty[:, i], all_indices)
+
         for ind in all_indices:
             for j in range(num_vars):
-                if cont[ind][j] > limits[ind][j]:
+                # Correct if index above control limit and the variable being
+                # tested is the right direction for the fault
+                if limits[ind][0][j] < cont[ind][j] < limits[ind][1][j]:
                     if j == np.argmax(faults[:, i]):
                         cont_rates[ind][0] += 1
                     else:
                         cont_rates[ind][1] += 1
+                elif j == np.argmax(faults[:, i]):
+                    cont_rates[ind][2] += 1
 
     for ind in all_indices:
         diag_rate = cont_rates[ind][0] / len(detected_faults) * 100
         false_diag_rate = cont_rates[ind][1] / len(detected_faults) * 100
+        missed_rate = cont_rates[ind][2] / len(detected_faults) * 100
         print(f"\n{ind} correct diagnosis: {diag_rate:.2f} %")
         print(f"{ind} false diagnosis: {false_diag_rate:.2f} %")
+        print(f"{ind} missed diagnosis: {missed_rate:.2f} %")
