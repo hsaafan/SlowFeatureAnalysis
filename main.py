@@ -11,6 +11,9 @@ from incsfa import IncSFA
 from rsfa import RSFA
 
 
+SIG = 0.05
+
+
 def run_sfa(dynamic_copies=2, expansion_order=1, cut_off=55):
     """ Batch Slow Feature Analysis
 
@@ -51,7 +54,7 @@ def run_sfa(dynamic_copies=2, expansion_order=1, cut_off=55):
     plotter.plot_features("SFA", Y, eta, num_features=5)
 
     """ Test model """
-    T_dc, T_ec, S_dc, S_ec = SlowFeature.calculate_crit_values()
+    T_dc, T_ec, S_dc, S_ec = SlowFeature.calculate_crit_values(alpha=SIG)
     data_iterable = [("SFA_IDV(0)", T0), ("SFA_IDV(4)", T4),
                      ("SFA_IDV(5)", T5), ("SFA_IDV(10)", T10)]
     for name, test in data_iterable:
@@ -106,15 +109,15 @@ def run_incsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
     num_vars, data_points = X.shape
 
     """ Create plotter object """
-    # figure_text = (f"Lagged Copies= {dynamic_copies} | "
-    #                f"Expansion Order= {expansion_order} | "
-    #                f"$M_d$= {cut_off} | "
-    #                f"Epochs: {epochs}  | "
-    #                f"K= {num_whitened_signals} | "
-    #                f"J= {num_features} | "
-    #                f"L= {sample_weight_parameter} | "
-    #                f"Tolerance= {conv_tol}")
-    # plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
+    figure_text = (f"Lagged Copies= {dynamic_copies} | "
+                   f"Expansion Order= {expansion_order} | "
+                   f"$M_d$= {cut_off} | "
+                   f"Epochs: {epochs}  | "
+                   f"K= {num_whitened_signals} | "
+                   f"J= {num_features} | "
+                   f"L= {sample_weight_parameter} | "
+                   f"Tolerance= {conv_tol}")
+    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
 
     """ Train model """
     # Create IncSFA object
@@ -149,32 +152,32 @@ def run_incsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
 
     SlowFeature.converged = True
 
-    # if plot_last_epoch:
-    #     Y = Y[:, -data_points:]
-    #     stats = stats[:, -data_points:]
-    #     stats_crit = stats_crit[:, -data_points:]
-    # # Calculate speed indices for features
-    # eta = np.around(Y.shape[1]/(2*np.pi)
-    #                 * np.sqrt(SlowFeature.features_speed), 2)
+    if plot_last_epoch:
+        Y = Y[:, -data_points:]
+        stats = stats[:, -data_points:]
+        stats_crit = stats_crit[:, -data_points:]
+    # Calculate speed indices for features
+    eta = np.around(Y.shape[1]/(2*np.pi)
+                    * np.sqrt(SlowFeature.features_speed), 2)
 
-    # # Plot features
-    # plotter.plot_features("IncSFA", Y, eta, num_features=5)
+    # Plot features
+    plotter.plot_features("IncSFA", Y, eta, num_features=5)
 
     # """ Test model """
-    # test_data = [("IncSFA_IDV(0)", T0), ("IncSFA_IDV(4)", T4),
-    #              ("IncSFA_IDV(5)", T5), ("IncSFA_IDV(10)", T10)]
-    # for name, test in test_data:
-    #     print("Evaluating test: " + name)
-    #     test_obj = copy.deepcopy(SlowFeature)
-    #     data_points = test.shape[1]
-    #     stats = np.zeros((4, data_points))
-    #     stats_crit = np.zeros((4, data_points))
+    test_data = [("IncSFA_IDV(0)", T0), ("IncSFA_IDV(4)", T4),
+                 ("IncSFA_IDV(5)", T5), ("IncSFA_IDV(10)", T10)]
+    for name, test in test_data:
+        print("Evaluating test: " + name)
+        test_obj = copy.deepcopy(SlowFeature)
+        data_points = test.shape[1]
+        stats = np.zeros((4, data_points))
+        stats_crit = np.zeros((4, data_points))
 
-    #     for i in range(data_points):
-    #         _, stats[:, i], stats_crit[:, i] = test_obj.add_data(test[:, i],
-    #                                                              alpha=0.01)
-    #     # Plot stats
-    #     plotter.plot_monitors(name, stats, stats_crit)
+        for i in range(data_points):
+            _, stats[:, i], stats_crit[:, i] = test_obj.add_data(test[:, i],
+                                                                 alpha=SIG)
+        # Plot stats
+        plotter.plot_monitors(name, stats, stats_crit)
 
     # plt.show()
 
@@ -215,15 +218,15 @@ def run_rsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
     num_vars, data_points = X.shape
 
     """ Create plotter object """
-    # figure_text = (f"Lagged Copies= {dynamic_copies} | "
-    #                f"Expansion Order= {expansion_order} | "
-    #                f"$M_d$= {cut_off} | "
-    #                f"Epochs: {epochs}  | "
-    #                f"K= {num_whitened_signals} | "
-    #                f"J= {num_features} | "
-    #                f"L= {sample_weight_parameter} | "
-    #                f"Tolerance= {conv_tol}")
-    # plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
+    figure_text = (f"Lagged Copies= {dynamic_copies} | "
+                   f"Expansion Order= {expansion_order} | "
+                   f"$M_d$= {cut_off} | "
+                   f"Epochs: {epochs}  | "
+                   f"K= {num_whitened_signals} | "
+                   f"J= {num_features} | "
+                   f"L= {sample_weight_parameter} | "
+                   f"Tolerance= {conv_tol}")
+    plotter = SFAPlotter(show=False, save=True, figure_text=figure_text)
 
     """ Train model """
     # Create RSFA object
@@ -256,33 +259,33 @@ def run_rsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
 
     SlowFeature.converged = True
 
-    # if plot_last_epoch:
-    #     Y = Y[:, -data_points:]
-    #     stats = stats[:, -data_points:]
-    #     stats_crit = stats_crit[:, -data_points:]
-    # # Calculate speed indices for features
-    # eta = np.around(Y.shape[1]/(2*np.pi)
-    #                 * np.sqrt(SlowFeature.features_speed), 2)
+    if plot_last_epoch:
+        Y = Y[:, -data_points:]
+        stats = stats[:, -data_points:]
+        stats_crit = stats_crit[:, -data_points:]
+    # Calculate speed indices for features
+    eta = np.around(Y.shape[1]/(2*np.pi)
+                    * np.sqrt(SlowFeature.features_speed), 2)
 
-    # # Plot features
-    # plotter.plot_features("RSFA", Y, eta, num_features=5)
+    # Plot features
+    plotter.plot_features("RSFA", Y, eta, num_features=5)
 
-    # """ Test model """
-    # test_data = [("RSFA_IDV(0)", T0), ("RSFA_IDV(4)", T4),
-    #              ("RSFA_IDV(5)", T5), ("RSFA_IDV(10)", T10)]
-    # for name, test in test_data:
-    #     print("Evaluating test: " + name)
-    #     test_obj = copy.deepcopy(SlowFeature)
-    #     data_points = test.shape[1]
-    #     stats = np.zeros((4, data_points))
-    #     stats_crit = np.zeros((4, data_points))
+    """ Test model """
+    test_data = [("RSFA_IDV(0)", T0), ("RSFA_IDV(4)", T4),
+                 ("RSFA_IDV(5)", T5), ("RSFA_IDV(10)", T10)]
+    for name, test in test_data:
+        print("Evaluating test: " + name)
+        test_obj = copy.deepcopy(SlowFeature)
+        data_points = test.shape[1]
+        stats = np.zeros((4, data_points))
+        stats_crit = np.zeros((4, data_points))
 
-    #     for i in range(data_points):
-    #         _, stats[:, i], stats_crit[:, i] = test_obj.add_data(test[:, i],
-    #                                                              alpha=0.01)
+        for i in range(data_points):
+            _, stats[:, i], stats_crit[:, i] = test_obj.add_data(test[:, i],
+                                                                 alpha=SIG)
 
-    #     # Plot stats
-    #     plotter.plot_monitors(name, stats, stats_crit)
+        # Plot stats
+        plotter.plot_monitors(name, stats, stats_crit)
 
     # plt.show()
 
@@ -293,6 +296,7 @@ if __name__ == "__main__":
                        "\n[1] SFA"
                        "\n[2] IncSFA"
                        "\n[3] RSFA"
+                       "\n[4] All"
                        "\n[q] Quit"
                        "\nChoice: ")
         if choice == "q":
@@ -307,6 +311,11 @@ if __name__ == "__main__":
                 break
             elif choice == 3:
                 run_rsfa()
+                break
+            elif choice == 4:
+                run_sfa()
+                run_rsfa()
+                run_incsfa()
                 break
             else:
                 print("Invalid Choice")

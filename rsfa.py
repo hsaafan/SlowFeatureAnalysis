@@ -282,17 +282,20 @@ class RSFA(IncrementalNode):
         features_slow_delta = y_dot[:Md].reshape(-1, 1)
         features_fast_delta = y_dot[Md:].reshape(-1, 1)
 
-        speed_slow = (Omega[:Md]).reshape((-1))
-        speed_fast = (Omega[Md:]).reshape((-1))
+        # speed_slow = (Omega[:Md]).reshape((-1))
+        # speed_fast = (Omega[Md:]).reshape((-1))
 
-        S_d = features_slow_delta.T @ np.diag(speed_slow**-1) @ features_slow_delta
-        S_e = features_fast_delta.T @ np.diag(speed_fast**-1) @ features_fast_delta
+        # S_d = features_slow_delta.T @ np.diag(speed_slow**-1) @ features_slow_delta
+        # S_e = features_fast_delta.T @ np.diag(speed_fast**-1) @ features_fast_delta
+
+        S_d = features_slow_delta.T @ features_slow_delta
+        S_e = features_fast_delta.T @ features_fast_delta
 
         stats = [T_d, T_e, S_d, S_e]
         stats_crit = [T_d_crit, T_e_crit, Q_d_crit, Q_e_crit]
         return(stats, stats_crit)
 
-    def calculate_Q_stat(self, eigenvalues, alpha, use_chi2=True):
+    def calculate_Q_stat(self, eigenvalues, alpha, use_chi2=False):
         """ Calculate the critical Q statistic
 
         Parameters

@@ -112,7 +112,7 @@ if __name__ == "__main__":
                   ("IncSFA", IncSFA_stats)]
     for model_ind, (model_name, model) in enumerate(data_array):
         for test_ind, (test_name, stats, crits) in enumerate(model):
-            if test_name != "IDV(10)":
+            if test_name != "IDV(0)":
                 continue
             for stat_ind in range(4):
                 # plt.subplot(4, 4, 4*stat_ind + test_ind + 1)

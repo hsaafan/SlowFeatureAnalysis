@@ -3,8 +3,10 @@
 __pychache__
 *.pyc
 TE_process
+TE_Process
 .vscode
 *.png
 mca.py
 pca.py
 *.txt
+*.zip
