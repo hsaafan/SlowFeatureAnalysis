@@ -101,6 +101,7 @@ def contribution_index(M: np.ndarray, x: np.ndarray, indices: list = ['CDC']):
 
     if 'CDC' in indices:
         sqrt_M = la.fractional_matrix_power(M, 0.5)
+        sqrt_M = np.real_if_close(sqrt_M)
 
     for ind in indices:
         vals = [0] * n
@@ -125,6 +126,7 @@ def relative_contribution_index(M: np.ndarray, x: np.ndarray, S: np.ndarray,
 
     if 'rCDC' in indices:
         sqrt_M = la.fractional_matrix_power(M, 0.5)
+        sqrt_M = np.real_if_close(sqrt_M)
 
     for ind in indices:
         vals = [0] * n
@@ -244,6 +246,7 @@ if __name__ == "__main__":
 
     S = np.cov(X)
     Lam, P = la.eig(S)
+    Lam = np.real_if_close(Lam)
     order = np.argsort(-1 * Lam)
     Lam = Lam[order]
     P = P[:, order]
@@ -302,16 +305,26 @@ if __name__ == "__main__":
         cont = contribution_index(D, X_faulty[:, i], all_indices)
 
         for ind in all_indices:
-            for j in range(num_vars):
+            highest_contrib = np.argmax(cont[ind])
+            if cont[ind][highest_contrib] > limits[ind][1][highest_contrib]:
+                if highest_contrib == np.argmax(faults[:, i]):
+                    cont_rates[ind][0] += 1
+                else:
+                    cont_rates[ind][1] += 1
+            else:
+                cont_rates[ind][2] += 1
+            # for j in range(num_vars):
                 # Correct if index above control limit and the variable being
                 # tested is the right direction for the fault
-                if limits[ind][0][j] < cont[ind][j] < limits[ind][1][j]:
-                    if j == np.argmax(faults[:, i]):
-                        cont_rates[ind][0] += 1
-                    else:
-                        cont_rates[ind][1] += 1
-                elif j == np.argmax(faults[:, i]):
-                    cont_rates[ind][2] += 1
+                # exceeds_upper = cont[ind][j] > limits[ind][1][j]
+                # below_lower = cont[ind][j] < limits[ind][0][j]
+                # if exceeds_upper or below_lower:
+                #     if j == np.argmax(faults[:, i]):
+                #         cont_rates[ind][0] += 1
+                #     else:
+                #         cont_rates[ind][1] += 1
+                # elif j == np.argmax(faults[:, i]):
+                #     cont_rates[ind][2] += 1
 
     for ind in all_indices:
         diag_rate = cont_rates[ind][0] / len(detected_faults) * 100
