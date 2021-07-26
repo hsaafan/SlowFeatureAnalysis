@@ -465,10 +465,10 @@ class IncSFA(IncrementalNode):
         speed_fast = (Omega[self.Md:]).reshape((-1))
 
         # Calculate monitoring stats
-        T_d = y_slow.T @ y_slow
-        T_e = y_fast.T @ y_fast
+        T_d = float(y_slow.T @ y_slow)
+        T_e = float(y_fast.T @ y_fast)
 
-        S_d = y_dot_slow.T @ np.diag(speed_slow**-1) @ y_dot_slow
-        S_e = y_dot_fast.T @ np.diag(speed_fast**-1) @ y_dot_fast
+        S_d = float(y_dot_slow.T @ np.diag(speed_slow**-1) @ y_dot_slow)
+        S_e = float(y_dot_fast.T @ np.diag(speed_fast**-1) @ y_dot_fast)
 
         return(T_d, T_e, S_d, S_e)
