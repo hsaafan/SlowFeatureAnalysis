@@ -189,3 +189,44 @@ class SFAPlotter:
                 plt.close(fig=_z)
                 _z = None
         return
+
+    def plot_contributions(self, fig_name, title, contributions, n_to_plot=20):
+        """ Plot the top n_to_plot contributing variables to a faulty sample
+
+        Parameters
+        ----------
+        fig_name: str
+            The name of the figure used for the file name if saving
+        title: str
+            The title on the figure
+        contributions: numpy.ndarray
+            The numpy array of shape (n, ) containing the variable
+            fault contributions of a sample
+        n_to_plot: int
+            The number of contributions to plot
+        """
+        _f, ax = plt.subplots()
+        _f.set_size_inches(8, 6)
+
+        order = np.argsort(-1 * contributions)
+        ordered_cont = contributions[order]
+        cum_percent = np.cumsum(ordered_cont) / np.sum(contributions)
+        bar_labels = [str(x) for x in order]
+
+        ax.bar(bar_labels[:n_to_plot], ordered_cont[:n_to_plot])
+        ax2 = ax.twinx()
+        ax2.plot(cum_percent[:n_to_plot], 'r')
+
+        ax.set_title(title)
+        ax.set_xlabel("Variable Index")
+        ax.set_ylabel("Fault Contribution")
+        ax2.set_ylabel("Cumulative Contribution")
+        ax2.set_ylim([0, 1])
+
+        plt.figtext(0.05, 0.02, self.figure_text)
+        if self.show:
+            plt.show()
+        if self.save:
+            plt.savefig(fig_name, dpi=350)
+            plt.close(fig=_f)
+            _f = None

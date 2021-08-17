@@ -3,6 +3,7 @@ import numpy as np
 
 import fault_diagnosis as fd
 import tep_import as imp
+import data_plotter
 from incsfa import IncSFA
 
 
@@ -134,6 +135,55 @@ if __name__ == "__main__":
         all_test_tallies.append((name, tallies))
 
     print_tallies(all_test_tallies)
+    """ Contribution Plots """
+    sample = 500  # Sample to plot
+    plotter = data_plotter.SFAPlotter(show=False, save=True)
+    plot = plotter.plot_contributions
+    for name, test in test_data:
+        plot(
+            f"{name}_RBC_T_d",
+            f"$T_d$ Fault Contributions Sample {sample} for {name[7:]}",
+            np.array(
+                     fd.contribution_index(
+                                           M_t2_d,
+                                           get_data_point(sample),
+                                           'RBC'
+                                           )['RBC']
+                    ).reshape((-1, ))
+        )
+        plot(
+            f"{name}_RBC_T_e",
+            f"$T_e$ Fault Contributions Sample {sample} for {name[7:]}",
+            np.array(
+                     fd.contribution_index(
+                                           M_t2_e,
+                                           get_data_point(sample),
+                                           'RBC'
+                                           )['RBC']
+                    ).reshape((-1, ))
+        )
+        plot(
+            f"{name}_RBC_S_d",
+            f"$S_d$ Fault Contributions Sample {sample} for {name[7:]}",
+            np.array(
+                     fd.contribution_index(
+                                           M_s2_d,
+                                           get_data_point_derivative(sample),
+                                           'RBC'
+                                          )['RBC']
+                    ).reshape((-1, ))
+        )
+        plot(
+            f"{name}_RBC_S_e",
+            f"$S_e$ Fault Contributions Sample {sample} for {name[7:]}",
+            np.array(
+                     fd.contribution_index(
+                                           M_s2_e,
+                                           get_data_point_derivative(sample),
+                                           'RBC'
+                                          )['RBC']
+                    ).reshape((-1, ))
+        )
 
     """
     Using RBC Fault Diagnosis with manually set control limits
