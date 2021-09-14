@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import tepimport as imp
-from data_plotter import SFAPlotter
 from sfa import SFA
 from incsfa import IncSFA
 from rsfa import RSFA

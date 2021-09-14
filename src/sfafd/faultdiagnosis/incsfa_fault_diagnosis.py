@@ -3,9 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from math import floor
 
-import fault_diagnosis as fd
 import tepimport as imp
-from incsfa import IncSFA
+from . import fault_diagnosis as fd
+from ..incsfa import IncSFA
+from .. import plotting
 
 INDEX_LABELS = [
     ("XMEAS(1)", "A Feed  (stream 1)", "kscmh"),
@@ -44,126 +45,6 @@ INDEX_LABELS = [
 ]
 
 
-def plot_test_stats(fig_name: str, title: str,
-                    T_d_values: np.ndarray, T_e_values: np.ndarray,
-                    S_d_values: np.ndarray, S_e_values: np.ndarray,
-                    T_d_crit: float, T_e_crit: float,
-                    S_d_crit: float, S_e_crit: float,
-                    show: bool = False, save: bool = True) -> None:
-    """ Plot the S2 and T2 test statistics
-
-    Parameters
-    ----------
-    fig_name: str
-        The name of the figure used for the file name if saving
-    title: str
-        The title on the figure
-    T2_values: numpy.ndarray
-        The T^2 values to plot
-    S2_values:
-        The S^2 values to plot
-    show: bool
-        Show the plot
-    save: bool
-        Save the plot to the current directory
-    """
-    _f, axs2d = plt.subplots(nrows=4, ncols=1, sharex=True)
-    _f.set_size_inches(8, 6)
-
-    T_d_plot = axs2d[0]
-    T_d_plot.set_title(title)
-    T_d_plot.set_ylabel("$T_d^2$")
-    T_d_plot.plot(T_d_values)
-    T_d_plot.plot([T_d_crit] * len(T_d_values))
-
-    T_e_plot = axs2d[1]
-    T_e_plot.set_ylabel("$T_e^2$")
-    T_e_plot.plot(T_e_values)
-    T_e_plot.plot([T_e_crit] * len(T_e_values))
-
-    S_d_plot = axs2d[2]
-    S_d_plot.set_ylabel("$S_d^2$")
-    S_d_plot.plot(S_d_values)
-    S_d_plot.plot([S_d_crit] * len(S_d_values))
-
-    S_e_plot = axs2d[3]
-    S_e_plot.set_ylabel("$S_e^2$")
-    S_e_plot.plot(S_e_values)
-    S_e_plot.plot([S_e_crit] * len(S_e_values))
-    S_e_plot.set_xlabel("Variable Index")
-
-    if show:
-        plt.show()
-    if save:
-        plt.savefig(fig_name, dpi=350)
-    plt.close(fig=_f)
-    _f = None
-
-
-def plot_contributions(fig_name: str, title: str,
-                       contributions: np.ndarray, n_to_plot: int = 5,
-                       show: bool = False, save: bool = True) -> None:
-    """ Plot the top n_to_plot contributing variables to a faulty sample
-
-    Parameters
-    ----------
-    fig_name: str
-        The name of the figure used for the file name if saving
-    title: str
-        The title on the figure
-    contributions: numpy.ndarray
-        The numpy array of shape (n, ) containing the variable
-        fault contributions of a sample
-    n_to_plot: int
-        The number of contributions to plot
-    show: bool
-        Show the plot
-    save: bool
-        Save the plot to the current directory
-    """
-    _f, ax = plt.subplots()
-    _f.set_size_inches(8, 6)
-
-    order = np.argsort(-1 * contributions)
-    ordered_cont = contributions[order]
-    cum_percent = np.cumsum(ordered_cont) / np.sum(contributions)
-    bar_labels = [str(x) for x in order]
-
-    text_box = 'Variable Index Descriptions'
-    for i in range(n_to_plot):
-
-        label = order[i] % len(INDEX_LABELS)
-        var_label, var_desc, var_units = INDEX_LABELS[label]
-        text_box += f'\nIndex {order[i]} | {var_label}: {var_desc}'
-        if var_units != '':
-            text_box += f' - {var_units}'
-
-        if order[i] >= len(INDEX_LABELS):
-            lag = floor(order[i] / len(INDEX_LABELS))
-            text_box += f' (t - {lag})'
-
-    ax.bar(bar_labels[:n_to_plot], ordered_cont[:n_to_plot])
-    ax2 = ax.twinx()
-    ax2.plot(cum_percent[:n_to_plot], 'r')
-
-    ax.set_title(title)
-    bbox = dict(boxstyle="square", ec=(0.0, 0.0, 0.0), fc=(1., 1.0, 1.0),
-                alpha=0.7)
-    ax.text(x=0.1, y=0.75, s=text_box, bbox=bbox, transform=ax.transAxes)
-
-    ax.set_xlabel("Variable Index")
-    ax.set_ylabel("Fault Contribution")
-    ax2.set_ylabel("Cumulative Contribution")
-    ax2.set_ylim([0, 1])
-
-    if show:
-        plt.show()
-    if save:
-        plt.savefig(fig_name, dpi=350)
-    plt.close(fig=_f)
-    _f = None
-
-
 def print_tallies(tallies):
     output = ""
     for heading, stat_list in tallies:
@@ -188,16 +69,16 @@ def print_tallies(tallies):
 def main(alpha: float = 0.05, sample: int = 500) -> None:
     if alpha > 1 or alpha < 0:
         raise ValueError("Confidence level should be between 0 and 1")
-    print('Importing data...')
     crit_stats = [175, 145, 300, 200]
-    """ Import Data """
+    """Import Data"""
     X, T0, T4, T5, T10 = imp.import_tep_sets(lagged_samples=0)
     alpha = 1.91e-6  # From find_control_limit results
+    lagged_samples = 2
     num_vars, train_data_points = X.shape
 
-    """ Train model """
+    """Train model"""
     # Create IncSFA object
-    SlowFeature = IncSFA(33, 99, 99, 2, 1, 2, 0)
+    SlowFeature = IncSFA(33, 99, 99, 2, 1, lagged_samples, 0)
     SlowFeature.delta = 3
     SlowFeature.Md = 55
     SlowFeature.Me = 99 - 55
@@ -206,7 +87,7 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
         _ = SlowFeature.add_data(X[:, i], use_svd_whitening=True)
     SlowFeature.converged = True
 
-    """ Fault Diagnosis Setup """
+    """Fault Diagnosis Setup"""
     Q = SlowFeature.standardization_node.whitening_matrix
     P = SlowFeature.transformation_matrix
     W = (Q @ P).T
@@ -229,7 +110,7 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
     M_s2_d = W_d.T @ np.diag(Omega_d ** -1) @ W_d
     M_s2_e = W_e.T @ np.diag(Omega_e ** -1) @ W_e
 
-    """ Test model """
+    """Test model"""
     test_data = [("IncSFA_IDV(0)", T0), ("IncSFA_IDV(4)", T4),
                  ("IncSFA_IDV(5)", T5), ("IncSFA_IDV(10)", T10)]
     test_faults = []
@@ -273,13 +154,13 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
         test_faults.append((name, test, fault_list))
         plot_name = f'{name}_Test_Stats'
         plot_title = f'{name[13:]} Test Statistics $alpha$={alpha}'
-        plot_test_stats(plot_name, plot_title,
-                        T_d_values, T_e_values,
-                        S_d_values, S_e_values,
-                        crit_stats[0], crit_stats[1],
-                        crit_stats[2], crit_stats[3])
 
-    """ Fault Diagnosis """
+        stats = np.asarray([T_d_values, T_e_values, S_d_values, S_e_values])
+        crit_stats = np.asarray(crit_stats)
+        fig = plotting.plot_monitors(stats, crit_stats, title=plot_title)
+        fig.savefig(plot_name)
+
+    """Fault Diagnosis"""
     def get_data_point(i, data):
         x = np.append(data[:, i], data[:, i - 1])
         x = np.append(x, data[:, i - 2])
@@ -332,54 +213,29 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
     with open('Tallies.txt', 'w') as f:
         f.write(print_tallies(all_test_tallies))
 
-    """ Contribution Plots """
+    """Contribution Plots"""
+    var_labels = []
+    for d in range(lagged_samples + 1):
+        for x, y, z in INDEX_LABELS:
+            label = f'{x} - {y}'
+            if z != "":
+                label += f' [{z}]'
+            if d > 0:
+                label += f' (t - {d})'
+            var_labels.append(label)
     for name, test in test_data:
-        plot_contributions(
-            f"{name}_RBC_T_d",
-            f"$T_d$ Fault Contributions Sample {sample} for {name[7:]}",
-            np.array(
-                     fd.contribution_index(
-                                           M_t2_d,
-                                           get_data_point(sample, test),
-                                           'RBC'
-                                           )['RBC']
-                    ).reshape((-1, ))
-        )
-        plot_contributions(
-            f"{name}_RBC_T_e",
-            f"$T_e$ Fault Contributions Sample {sample} for {name[7:]}",
-            np.array(
-                     fd.contribution_index(
-                                           M_t2_e,
-                                           get_data_point(sample, test),
-                                           'RBC'
-                                           )['RBC']
-                    ).reshape((-1, ))
-        )
-        plot_contributions(
-            f"{name}_RBC_S_d",
-            f"$S_d$ Fault Contributions Sample {sample} for {name[7:]}",
-            np.array(
-                     fd.contribution_index(
-                                           M_s2_d,
-                                           get_data_point_derivative(sample,
-                                                                     test),
-                                           'RBC'
-                                          )['RBC']
-                    ).reshape((-1, ))
-        )
-        plot_contributions(
-            f"{name}_RBC_S_e",
-            f"$S_e$ Fault Contributions Sample {sample} for {name[7:]}",
-            np.array(
-                     fd.contribution_index(
-                                           M_s2_e,
-                                           get_data_point_derivative(sample,
-                                                                     test),
-                                           'RBC'
-                                          )['RBC']
-                    ).reshape((-1, ))
-        )
+        T2d_cont = np.array(fd.contribution_index(M_t2_d, get_data_point(sample, test), 'RBC')['RBC']).reshape((-1, ))
+        T2e_cont = np.array(fd.contribution_index(M_t2_e, get_data_point(sample, test), 'RBC')['RBC']).reshape((-1, ))
+        S2d_cont = np.array(fd.contribution_index(M_s2_d, get_data_point_derivative(sample, test), 'RBC')['RBC']).reshape((-1, ))
+        S2e_cont = np.array(fd.contribution_index(M_s2_e, get_data_point_derivative(sample, test), 'RBC')['RBC']).reshape((-1, ))
+        fig1 = plotting.plot_contributions(T2d_cont, var_labels, title=f"$T_d$ Fault Contributions Sample {sample} for {name[7:]}")
+        fig1.savefig(f"{name}_RBC_T_d")
+        fig2 = plotting.plot_contributions(T2e_cont, var_labels, title=f"$T_e$ Fault Contributions Sample {sample} for {name[7:]}")
+        fig2.savefig(f"{name}_RBC_T_e")
+        fig3 = plotting.plot_contributions(S2d_cont, var_labels, title=f"$S_d$ Fault Contributions Sample {sample} for {name[7:]}")
+        fig3.savefig(f"{name}_RBC_S_d")
+        fig4 = plotting.plot_contributions(S2e_cont, var_labels, title=f"$S_e$ Fault Contributions Sample {sample} for {name[7:]}")
+        fig4.savefig(f"{name}_RBC_S_e")
 
 
 if __name__ == "__main__":

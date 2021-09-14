@@ -16,8 +16,8 @@ import numpy as np
 import scipy.linalg as LA
 import scipy.stats as stats
 
-from data_node import Node
-from standardization_node import Standardization
+from .data_node import Node
+from .standardization_node import Standardization
 
 
 class SFA(Node):

@@ -5,7 +5,7 @@ import io
 import numpy as np
 import matplotlib.pyplot as plt
 import gc
-import main
+from .examples import examples as main
 
 def save_profile():
     pr = cProfile.Profile()

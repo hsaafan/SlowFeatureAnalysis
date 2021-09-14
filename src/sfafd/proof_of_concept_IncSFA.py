@@ -12,7 +12,7 @@ __author__ = "Hussein Saafan"
 import numpy as np
 import matplotlib.pyplot as plt
 
-from incsfa import IncSFA
+from .incsfa import IncSFA
 
 
 def data_poc(samples):

@@ -22,13 +22,10 @@ References
        Transactions on Industrial Electronics (1982), 65(11), 8895–8905.
        <https://doi.org/10.1109/tie.2018.2811358>
 """
-
-__author__ = "Hussein Saafan"
-
 import numpy as np
-import scipy.linalg as LA
+import scipy.linalg
 
-from data_node import Node
+from .data_node import Node
 
 eps = 1e-64
 
@@ -97,7 +94,7 @@ class Standardization(Node):
             Data with identity variance matrix
         """
         cov_X = np.cov(data)
-        U, Lambda, UT = LA.svd(cov_X)
+        U, Lambda, UT = scipy.linalg.svd(cov_X)
 
         # Calculate the whitening matrix
         Q = U @ np.diag(Lambda**-(1/2))
@@ -284,10 +281,10 @@ class IncrementalStandardization(Node):
         u = sample.reshape((-1, 1))
         for i in range(self.num_components):
             v_prev = eigensystem[:, i].reshape((-1, 1))
-            v_norm = LA.norm(v_prev) + eps
+            v_norm = scipy.linalg.norm(v_prev) + eps
             projection = (u.T @ v_prev) / v_norm
             v_new = (1 - eta) * v_prev + eta * projection * u
-            v_norm = LA.norm(v_new) + eps
+            v_norm = scipy.linalg.norm(v_new) + eps
             u = u - (u.T @ (v_new / v_norm)) * (v_new / v_norm)
             eigensystem[:, i] = v_new.flat
 
@@ -310,7 +307,7 @@ class IncrementalStandardization(Node):
         U = np.zeros_like(eigensystem)
         # Calculate the eigenvectors and the diagonal matrix
         for i in range(self.num_components):
-            eigenvalue = LA.norm(eigensystem[:, i]) + eps
+            eigenvalue = scipy.linalg.norm(eigensystem[:, i]) + eps
             U[:, i] = eigensystem[:, i] / eigenvalue
             D[i] = eigenvalue ** (-1/2)
 
@@ -506,7 +503,7 @@ class RecursiveStandardization(IncrementalStandardization):
             estimate
         """
         self._update_sample_cov(sample, eta)
-        U, L, UT = LA.svd(self.covariance)
+        U, L, UT = scipy.linalg.svd(self.covariance)
         self.whitening_matrix = U @ np.diag(L ** (-1/2))
         self.whitening_matrix = self.whitening_matrix[:, :self.num_components]
         whitened_sample = self.whitening_matrix.T @ sample

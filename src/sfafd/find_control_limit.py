@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 from scipy import stats as ST
 
 import tepimport as imp
-from incsfa import IncSFA
-from sfa import SFA
+from .incsfa import IncSFA
+from .sfa import SFA
 
 
 def incsfa_significance(num_whitened_signals=99,
@@ -92,7 +92,7 @@ def sfa_significance(dynamic_copies=2,
                      cut_off=55,
                      normal_data_included=0.99):
     """ Import data """
-    X, T0, _, _, _ = imp.import_tep_sets()
+    X, T0, _, _, _ = imp.import_tep_sets(lagged_samples=0)
 
     """ Train model """
     SlowFeature = SFA(data=X,
@@ -132,7 +132,7 @@ def sfa_significance(dynamic_copies=2,
 
 
 def plot_incsfa(significance):
-    X, T0, T4, T5, T10 = imp.import_tep_sets()
+    X, T0, T4, T5, T10 = imp.import_tep_sets(lagged_samples=0)
     num_vars, train_data_points = X.shape
 
     """ Train model """

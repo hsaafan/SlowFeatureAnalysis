@@ -20,8 +20,8 @@ import numpy as np
 import scipy.linalg as LA
 import scipy.stats as ST
 
-from data_node import IncrementalNode
-from standardization_node import RecursiveStandardization
+from .data_node import IncrementalNode
+from .standardization_node import RecursiveStandardization
 
 
 class RSFA(IncrementalNode):
