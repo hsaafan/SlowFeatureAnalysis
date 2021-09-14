@@ -25,11 +25,8 @@ References
 
 __author__ = "Hussein Saafan"
 
-import warnings
-
 import numpy as np
 import scipy.linalg as LA
-import scipy
 
 from data_node import Node
 

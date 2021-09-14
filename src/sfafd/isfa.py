@@ -25,7 +25,7 @@ import scipy.linalg as LA
 import matplotlib.pyplot as plt
 import scipy.stats
 
-import tep_import as imp
+import tepimport as imp
 
 
 class ISFA:
@@ -282,7 +282,7 @@ if __name__ == "__main__":
     # So each sample is a band and each value is a band value
 
     # Import TEP and set up input data
-    X, T4, T5, T10 = imp.import_tep_sets()
+    X, T4, T5, T10 = imp.import_tep_sets(lagged_samples=0)
 
     num_samples = 100
     num_vars = X.shape[0]

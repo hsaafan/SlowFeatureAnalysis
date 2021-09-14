@@ -3,7 +3,7 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 
-import tep_import as imp
+import tepimport as imp
 from data_plotter import SFAPlotter
 from sfa import SFA
 from incsfa import IncSFA
@@ -21,7 +21,7 @@ if __name__ == "__main__":
     L = 2
 
     # Import data set
-    X, T0, T4, T5, T10 = imp.import_tep_sets()
+    X, T0, T4, T5, T10 = imp.import_tep_sets(lagged_samples=0)
 
     # Create models
     ModelSFA = SlowFeature = SFA(data=X,

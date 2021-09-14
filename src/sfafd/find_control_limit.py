@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats as ST
 
-import tep_import as imp
+import tepimport as imp
 from incsfa import IncSFA
 from sfa import SFA
 
@@ -19,7 +19,7 @@ def incsfa_significance(num_whitened_signals=99,
                         use_SVD=True,
                         normal_data_included=0.99):
     """ Import data """
-    X, T0, _, _, _ = imp.import_tep_sets()
+    X, T0, _, _, _ = imp.import_tep_sets(lagged_samples=0)
     num_vars, data_points = X.shape
 
     """ Train model """

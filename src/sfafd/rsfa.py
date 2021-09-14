@@ -20,7 +20,6 @@ import numpy as np
 import scipy.linalg as LA
 import scipy.stats as ST
 
-import tep_import as imp
 from data_node import IncrementalNode
 from standardization_node import RecursiveStandardization
 

@@ -4,7 +4,7 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 
-import tep_import as imp
+import tepimport as imp
 from data_plotter import SFAPlotter
 from sfa import SFA
 from incsfa import IncSFA
@@ -31,7 +31,7 @@ def run_sfa(dynamic_copies=2, expansion_order=1, cut_off=55):
     """
 
     """ Import data """
-    X, T0, T4, T5, T10 = imp.import_tep_sets()
+    X, T0, T4, T5, T10 = imp.import_tep_sets(lagged_samples=0)
 
     """ Create plotter object """
     figure_text = (f"Lagged Copies= {dynamic_copies} | "
@@ -105,7 +105,7 @@ def run_incsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
     """
 
     """ Import data """
-    X, T0, T4, T5, T10 = imp.import_tep_sets()
+    X, T0, T4, T5, T10 = imp.import_tep_sets(lagged_samples=0)
     num_vars, data_points = X.shape
 
     """ Create plotter object """
@@ -214,7 +214,7 @@ def run_rsfa(dynamic_copies=2, expansion_order=1, cut_off=55,
     """
 
     """ Import data """
-    X, T0, T4, T5, T10 = imp.import_tep_sets()
+    X, T0, T4, T5, T10 = imp.import_tep_sets(lagged_samples=2)
     num_vars, data_points = X.shape
 
     """ Create plotter object """
