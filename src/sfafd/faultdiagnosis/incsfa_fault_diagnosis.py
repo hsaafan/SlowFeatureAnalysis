@@ -153,7 +153,7 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
                       ("S_d", S_d_faults), ("S_e", S_e_faults)]
         test_faults.append((name, test, fault_list))
         plot_name = f'{name}_Test_Stats'
-        plot_title = f'{name[13:]} Test Statistics $alpha$={alpha}'
+        plot_title = f'{name[7:]} Test Statistics $alpha$={alpha}'
 
         stats = np.asarray([T_d_values, T_e_values, S_d_values, S_e_values])
         crit_stats = np.asarray(crit_stats)
@@ -171,27 +171,48 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
         return((get_data_point(i, data) - get_data_point(i - 1, data))
                / SlowFeature.delta)
 
+    """Normalized Contributions"""
+    n_T0 = T0.shape[1]
+    average_T_d = np.zeros((99))
+    average_T_e = np.zeros((99))
+    average_S_d = np.zeros((99))
+    average_S_e = np.zeros((99))
+    for i in range(n_T0):
+        average_T_d += np.array(fd.contribution_index(M_t2_d, get_data_point(i, T0), 'RBC')['RBC']).reshape((-1, ))
+        average_T_e += np.array(fd.contribution_index(M_t2_e, get_data_point(i, T0), 'RBC')['RBC']).reshape((-1, ))
+        average_S_d += np.array(fd.contribution_index(M_s2_d, get_data_point_derivative(i, T0), 'RBC')['RBC']).reshape((-1, ))
+        average_S_e += np.array(fd.contribution_index(M_s2_e, get_data_point_derivative(i, T0), 'RBC')['RBC']).reshape((-1, ))
+    average_T_d /= n_T0
+    average_T_e /= n_T0
+    average_S_d /= n_T0
+    average_S_e /= n_T0
+
+
     all_test_tallies = []
     for name, test, all_faults in test_faults:
         tallies = []
         for test_stat_name, fault_list in all_faults:
             if test_stat_name == "T_d":
                 D = M_t2_d
+                avg_cont = average_T_d
 
                 def data_point(i):
                     return(get_data_point(i, test))
             elif test_stat_name == "T_e":
                 D = M_t2_e
+                avg_cont = average_T_e
 
                 def data_point(i):
                     return(get_data_point(i, test))
             elif test_stat_name == "S_d":
                 D = M_s2_d
+                avg_cont = average_S_d
 
                 def data_point(i):
                     return(get_data_point_derivative(i, test))
             elif test_stat_name == "S_e":
                 D = M_s2_e
+                avg_cont = average_S_e
 
                 def data_point(i):
                     return(get_data_point_derivative(i, test))
@@ -202,7 +223,7 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
             for i in fault_list:
                 # Get index and limit for each fault sample
                 cont = fd.contribution_index(D, data_point(i), 'RBC')
-                highest_contrib = int(np.argmax(cont['RBC']))
+                highest_contrib = int(np.argmax(cont['RBC']  / avg_cont))
                 if highest_contrib in fault_tally:
                     fault_tally[highest_contrib] += 1
                 else:
@@ -224,10 +245,10 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
                 label += f' (t - {d})'
             var_labels.append(label)
     for name, test in test_data:
-        T2d_cont = np.array(fd.contribution_index(M_t2_d, get_data_point(sample, test), 'RBC')['RBC']).reshape((-1, ))
-        T2e_cont = np.array(fd.contribution_index(M_t2_e, get_data_point(sample, test), 'RBC')['RBC']).reshape((-1, ))
-        S2d_cont = np.array(fd.contribution_index(M_s2_d, get_data_point_derivative(sample, test), 'RBC')['RBC']).reshape((-1, ))
-        S2e_cont = np.array(fd.contribution_index(M_s2_e, get_data_point_derivative(sample, test), 'RBC')['RBC']).reshape((-1, ))
+        T2d_cont = np.array(fd.contribution_index(M_t2_d, get_data_point(sample, test), 'RBC')['RBC']).reshape((-1, )) / average_T_d
+        T2e_cont = np.array(fd.contribution_index(M_t2_e, get_data_point(sample, test), 'RBC')['RBC']).reshape((-1, )) / average_T_e
+        S2d_cont = np.array(fd.contribution_index(M_s2_d, get_data_point_derivative(sample, test), 'RBC')['RBC']).reshape((-1, )) / average_S_d
+        S2e_cont = np.array(fd.contribution_index(M_s2_e, get_data_point_derivative(sample, test), 'RBC')['RBC']).reshape((-1, )) / average_S_e
         fig1 = plotting.plot_contributions(T2d_cont, var_labels, title=f"$T_d$ Fault Contributions Sample {sample} for {name[7:]}")
         fig1.savefig(f"{name}_RBC_T_d")
         fig2 = plotting.plot_contributions(T2e_cont, var_labels, title=f"$T_e$ Fault Contributions Sample {sample} for {name[7:]}")
@@ -239,4 +260,4 @@ def main(alpha: float = 0.05, sample: int = 500) -> None:
 
 
 if __name__ == "__main__":
-    main(alpha=0.05, sample=500)
+    main(alpha=0.05, sample=170)

@@ -8,15 +8,17 @@ import tepimport as imp
 
 def plot_disturbances(show: bool = True, save: bool = False,
                       w_in: float = 8, h_in: float = 6) -> None:
-    training_sets = imp.import_sets([4, 5, 10], skip_training=True)
+    training_sets = imp.import_sets([4, 5, 10, 11], skip_training=True)
     _, T4 = training_sets[0]
     _, T5 = training_sets[1]
     _, T10 = training_sets[2]
+    _, T11 = training_sets[3]
 
     ignored_var = list(range(22, 41))
     T4 = np.delete(T4, ignored_var, axis=0)
     T5 = np.delete(T5, ignored_var, axis=0)
     T10 = np.delete(T10, ignored_var, axis=0)
+    T11 = np.delete(T11, ignored_var, axis=0)
 
     """ IDV(4) """
     T4_reactor_temp = T4[8, :]
@@ -38,6 +40,7 @@ def plot_disturbances(show: bool = True, save: bool = False,
 
     fig4.set_size_inches(w_in, h_in)
     fig4.tight_layout()
+
     """ IDV(5) """
     T5_condenser_cooling_water_flow = T5[32, :]
     T5_reactor_pressure = T5[6, :]
@@ -76,12 +79,35 @@ def plot_disturbances(show: bool = True, save: bool = False,
 
     fig10.set_size_inches(w_in, h_in)
     fig10.tight_layout()
+
+    """ IDV(4) """
+    T11_reactor_temp = T11[8, :]
+    reactor_temp_setpoint = 120.4 * np.ones_like(T11_reactor_temp)
+    T11_rector_cooling_water_flow = T11[31, :]
+
+    plt.rcParams.update({'font.size': 16})
+    fig11, ax11 = plt.subplots(nrows=2, sharex=True)
+    ax11[0].set_title("Reactor Cooling Water Flow")
+    ax11[0].set_ylabel("Flow $(m^3h^{-1})$")
+    ax11[0].plot(T11_rector_cooling_water_flow)
+
+    ax11[1].set_title("Reactor Temperature")
+    ax11[1].set_ylabel("Temperature ($\degree C$)")
+    ax11[1].set_xlabel("Sample Index")
+    ax11[1].plot(T11_reactor_temp, label="Reactor Temperature")
+    ax11[1].plot(reactor_temp_setpoint, label="Setpoint")
+    ax11[1].legend()
+
+    fig11.set_size_inches(w_in, h_in)
+    fig11.tight_layout()
+
     if show:
         plt.show()
     if save:
         fig4.savefig("IDV(4)")
         fig5.savefig("IDV(5)")
         fig10.savefig("IDV(10)")
+        fig11.savefig("IDV(11)")
 
 
 if __name__ == "__main__":

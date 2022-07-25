@@ -4,11 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import tepimport as imp
-from sfa import SFA
-from incsfa import IncSFA
-from rsfa import RSFA
+from .sfa import SFA
+from .incsfa import IncSFA
+from .rsfa import RSFA
 
-if __name__ == "__main__":
+def main():
     # Define parameters
     m = 33
     k = 1
@@ -21,6 +21,8 @@ if __name__ == "__main__":
 
     # Import data set
     X, T0, T4, T5, T10 = imp.import_tep_sets(lagged_samples=0)
+    _, T11 = imp.import_sets([11], skip_training=True)[0]
+    T11 = np.delete(T11, list(range(22, 41)), axis=0)
 
     # Create models
     ModelSFA = SlowFeature = SFA(data=X,
@@ -69,7 +71,9 @@ if __name__ == "__main__":
 
     # Test models
     models = [("SFA", ModelSFA), ("RSFA", ModelRSFA), ("IncSFA", ModelIncSFA)]
-    tests = [("IDV(0)", T0), ("IDV(4)", T4), ("IDV(5)", T5), ("IDV(10)", T10)]
+    tests = [("IDV(0)", T0), ("IDV(4)", T4),
+             ("IDV(5)", T5), ("IDV(10)", T10),
+             ("IDV(11)", T11)]
     SFA_stats = []
     RSFA_stats = []
     IncSFA_stats = []
@@ -102,16 +106,18 @@ if __name__ == "__main__":
                 elif model_name == "IncSFA":
                     IncSFA_stats.append((test_name, stats, stats_crit))
 
-    plt.figure()
+    _f, ax = plt.subplots()
+    _f.set_size_inches(10.5, 9)
+    _f.set_tight_layout(True)
     plt.rcParams.update({'font.size': 16})
-    plt.subplots_adjust(0.17, 0.05, 0.95, 0.95, 0, 0.05)
+    # plt.subplots_adjust(0.17, 0.05, 0.95, 0.95, 0, 0.05)
     lag = 5  # To prevent plotting discontinuities in sequential models
     data_array = [("SFA", SFA_stats),
-                  ("RSFA", RSFA_stats),
+                  #("RSFA", RSFA_stats),
                   ("IncSFA", IncSFA_stats)]
     for model_ind, (model_name, model) in enumerate(data_array):
         for test_ind, (test_name, stats, crits) in enumerate(model):
-            if test_name != "IDV(0)":
+            if test_name != "IDV(4)":
                 continue
             for stat_ind in range(4):
                 # plt.subplot(4, 4, 4*stat_ind + test_ind + 1)
@@ -134,5 +140,6 @@ if __name__ == "__main__":
                         plt.ylabel("$S^2_d$")
                     if stat_ind == 3:
                         plt.ylabel("$S^2_e$")
-    plt.show()
+    plt.savefig('results.png', dpi=350)
+    # plt.show()
     print("Done!")
